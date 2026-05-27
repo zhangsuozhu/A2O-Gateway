@@ -1,0 +1,22 @@
+{
+  "model": "qwen-coder",
+  "max_tokens": 1024,
+  "messages": [
+    {"role": "user", "content": "北京今天适合穿什么？请调用天气工具。"}
+  ],
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Get weather by city name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "city": {"type": "string"}
+        },
+        "required": ["city"]
+      }
+    }
+  ],
+  "tool_choice": {"type": "auto"},
+  "stream": false
+}

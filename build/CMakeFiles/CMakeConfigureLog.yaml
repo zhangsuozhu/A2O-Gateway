@@ -1,0 +1,1975 @@
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineSystem.cmake:12 (find_program)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_UNAME"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "uname"
+    candidate_directories:
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    searched_directories:
+      - "/home/alanx/.local/bin/uname"
+      - "/home/alanx/.bun/bin/uname"
+      - "/home/alanx/.opencode/bin/uname"
+      - "/home/alanx/.copaw/bin/uname"
+      - "/home/alanx/.pyenv/shims/uname"
+      - "/home/alanx/.pyenv/bin/uname"
+      - "/home/alanx/.cargo/bin/uname"
+      - "/usr/local/sbin/uname"
+      - "/usr/local/bin/uname"
+      - "/usr/sbin/uname"
+    found: "/usr/bin/uname"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineSystem.cmake:212 (message)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      The system is: Linux - 5.10.0-9-generic - x86_64
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeUnixFindMake.cmake:5 (find_program)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_MAKE_PROGRAM"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gmake"
+      - "make"
+      - "smake"
+    candidate_directories:
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    searched_directories:
+      - "/home/alanx/.local/bin/gmake"
+      - "/home/alanx/.bun/bin/gmake"
+      - "/home/alanx/.opencode/bin/gmake"
+      - "/home/alanx/.copaw/bin/gmake"
+      - "/home/alanx/.pyenv/shims/gmake"
+      - "/home/alanx/.pyenv/bin/gmake"
+      - "/home/alanx/.cargo/bin/gmake"
+      - "/usr/local/sbin/gmake"
+      - "/usr/local/bin/gmake"
+      - "/usr/sbin/gmake"
+      - "/usr/bin/gmake"
+      - "/sbin/gmake"
+      - "/bin/gmake"
+      - "/usr/games/gmake"
+      - "/usr/local/games/gmake"
+      - "/snap/bin/gmake"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/gmake"
+      - "/home/alanx/.costrict/bin/gmake"
+      - "/usr/local/Typora-linux-x64/gmake"
+      - "/home/alanx/.local/bin/make"
+      - "/home/alanx/.bun/bin/make"
+      - "/home/alanx/.opencode/bin/make"
+      - "/home/alanx/.copaw/bin/make"
+      - "/home/alanx/.pyenv/shims/make"
+      - "/home/alanx/.pyenv/bin/make"
+      - "/home/alanx/.cargo/bin/make"
+      - "/usr/local/sbin/make"
+      - "/usr/local/bin/make"
+      - "/usr/sbin/make"
+    found: "/usr/bin/make"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompiler.cmake:73 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:64 (_cmake_find_compiler)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER"
+    description: "C compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "cc"
+      - "gcc"
+      - "cl"
+      - "bcc"
+      - "xlc"
+      - "icx"
+      - "clang"
+    candidate_directories:
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    searched_directories:
+      - "/home/alanx/.local/bin/cc"
+      - "/home/alanx/.bun/bin/cc"
+      - "/home/alanx/.opencode/bin/cc"
+      - "/home/alanx/.copaw/bin/cc"
+      - "/home/alanx/.pyenv/shims/cc"
+      - "/home/alanx/.pyenv/bin/cc"
+      - "/home/alanx/.cargo/bin/cc"
+      - "/usr/local/sbin/cc"
+      - "/usr/local/bin/cc"
+      - "/usr/sbin/cc"
+    found: "/usr/bin/cc"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerId.cmake:462 (find_file)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerId.cmake:500 (CMAKE_DETERMINE_COMPILER_ID_WRITE)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerId.cmake:8 (CMAKE_DETERMINE_COMPILER_ID_BUILD)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:122 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "file"
+    variable: "src_in"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "CMakeCCompilerId.c.in"
+    candidate_directories:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/"
+    found: "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeCCompilerId.c.in"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:122 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /usr/bin/cc 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is GNU, found in:
+        /home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/4.2.3/CompilerIdC/a.out
+      
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_AR"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/ar"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_RANLIB"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/ranlib"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_STRIP"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "strip"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/strip"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_LINKER"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ld"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/ld"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_NM"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "nm"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/nm"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_OBJDUMP"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "objdump"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/objdump"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_OBJCOPY"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "objcopy"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/objcopy"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_READELF"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "readelf"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/readelf"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_DLLTOOL"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "dlltool"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    searched_directories:
+      - "/usr/bin/dlltool"
+      - "/home/alanx/.local/bin/dlltool"
+      - "/home/alanx/.bun/bin/dlltool"
+      - "/home/alanx/.opencode/bin/dlltool"
+      - "/home/alanx/.copaw/bin/dlltool"
+      - "/home/alanx/.pyenv/shims/dlltool"
+      - "/home/alanx/.pyenv/bin/dlltool"
+      - "/home/alanx/.cargo/bin/dlltool"
+      - "/usr/local/sbin/dlltool"
+      - "/usr/local/bin/dlltool"
+      - "/usr/sbin/dlltool"
+      - "/sbin/dlltool"
+      - "/bin/dlltool"
+      - "/usr/games/dlltool"
+      - "/usr/local/games/dlltool"
+      - "/snap/bin/dlltool"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/dlltool"
+      - "/home/alanx/.costrict/bin/dlltool"
+      - "/usr/local/Typora-linux-x64/dlltool"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_ADDR2LINE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "addr2line"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    found: "/usr/bin/addr2line"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_TAPI"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "tapi"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    searched_directories:
+      - "/usr/bin/tapi"
+      - "/home/alanx/.local/bin/tapi"
+      - "/home/alanx/.bun/bin/tapi"
+      - "/home/alanx/.opencode/bin/tapi"
+      - "/home/alanx/.copaw/bin/tapi"
+      - "/home/alanx/.pyenv/shims/tapi"
+      - "/home/alanx/.pyenv/bin/tapi"
+      - "/home/alanx/.cargo/bin/tapi"
+      - "/usr/local/sbin/tapi"
+      - "/usr/local/bin/tapi"
+      - "/usr/sbin/tapi"
+      - "/sbin/tapi"
+      - "/bin/tapi"
+      - "/usr/games/tapi"
+      - "/usr/local/games/tapi"
+      - "/snap/bin/tapi"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/tapi"
+      - "/home/alanx/.costrict/bin/tapi"
+      - "/usr/local/Typora-linux-x64/tapi"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/Compiler/GNU-FindBinUtils.cmake:18 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:201 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER_AR"
+    description: "A wrapper around 'ar' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ar-9.3"
+      - "gcc-ar-9"
+      - "gcc-ar9"
+      - "gcc-ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    searched_directories:
+      - "/usr/bin/gcc-ar-9.3"
+      - "/home/alanx/.local/bin/gcc-ar-9.3"
+      - "/home/alanx/.bun/bin/gcc-ar-9.3"
+      - "/home/alanx/.opencode/bin/gcc-ar-9.3"
+      - "/home/alanx/.copaw/bin/gcc-ar-9.3"
+      - "/home/alanx/.pyenv/shims/gcc-ar-9.3"
+      - "/home/alanx/.pyenv/bin/gcc-ar-9.3"
+      - "/home/alanx/.cargo/bin/gcc-ar-9.3"
+      - "/usr/local/sbin/gcc-ar-9.3"
+      - "/usr/local/bin/gcc-ar-9.3"
+      - "/usr/sbin/gcc-ar-9.3"
+      - "/sbin/gcc-ar-9.3"
+      - "/bin/gcc-ar-9.3"
+      - "/usr/games/gcc-ar-9.3"
+      - "/usr/local/games/gcc-ar-9.3"
+      - "/snap/bin/gcc-ar-9.3"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/gcc-ar-9.3"
+      - "/home/alanx/.costrict/bin/gcc-ar-9.3"
+      - "/usr/local/Typora-linux-x64/gcc-ar-9.3"
+    found: "/usr/bin/gcc-ar-9"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/Compiler/GNU-FindBinUtils.cmake:30 (find_program)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCCompiler.cmake:201 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER_RANLIB"
+    description: "A wrapper around 'ranlib' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ranlib-9.3"
+      - "gcc-ranlib-9"
+      - "gcc-ranlib9"
+      - "gcc-ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+    searched_directories:
+      - "/usr/bin/gcc-ranlib-9.3"
+      - "/home/alanx/.local/bin/gcc-ranlib-9.3"
+      - "/home/alanx/.bun/bin/gcc-ranlib-9.3"
+      - "/home/alanx/.opencode/bin/gcc-ranlib-9.3"
+      - "/home/alanx/.copaw/bin/gcc-ranlib-9.3"
+      - "/home/alanx/.pyenv/shims/gcc-ranlib-9.3"
+      - "/home/alanx/.pyenv/bin/gcc-ranlib-9.3"
+      - "/home/alanx/.cargo/bin/gcc-ranlib-9.3"
+      - "/usr/local/sbin/gcc-ranlib-9.3"
+      - "/usr/local/bin/gcc-ranlib-9.3"
+      - "/usr/sbin/gcc-ranlib-9.3"
+      - "/sbin/gcc-ranlib-9.3"
+      - "/bin/gcc-ranlib-9.3"
+      - "/usr/games/gcc-ranlib-9.3"
+      - "/usr/local/games/gcc-ranlib-9.3"
+      - "/snap/bin/gcc-ranlib-9.3"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/gcc-ranlib-9.3"
+      - "/home/alanx/.costrict/bin/gcc-ranlib-9.3"
+      - "/usr/local/Typora-linux-x64/gcc-ranlib-9.3"
+    found: "/usr/bin/gcc-ranlib-9"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerABI.cmake:83 (try_compile)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx"
+      binary: "/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx'
+        
+        Run Build Command(s): /home/alanx/.local/lib/python3.8/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/make -f Makefile cmTC_471e4/fast
+        make[1]: Entering directory '/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx'
+        /usr/bin/make  -f CMakeFiles/cmTC_471e4.dir/build.make CMakeFiles/cmTC_471e4.dir/build
+        make[2]: Entering directory '/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx'
+        Building C object CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o
+        /usr/bin/cc   -v -o CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -c /home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeCCompilerABI.c
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/cc
+        OFFLOAD_TARGET_NAMES=nvptx-none:hsa
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Ubuntu 9.3.0-10kylin2' --with-bugurl=file:///usr/share/doc/gcc-9/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++,gm2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-9 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none,hsa --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+        Thread model: posix
+        gcc version 9.3.0 (Ubuntu 9.3.0-10kylin2) 
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+         /usr/lib/gcc/x86_64-linux-gnu/9/cc1 -quiet -v -imultiarch x86_64-linux-gnu /home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeCCompilerABI.c -quiet -dumpbase CMakeCCompilerABI.c -mtune=generic -march=x86-64 -auxbase-strip CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/cces5hTI.s
+        GNU C17 (Ubuntu 9.3.0-10kylin2) version 9.3.0 (x86_64-linux-gnu)
+        	compiled by GNU C version 9.3.0, GMP version 6.2.0, MPFR version 4.0.2, MPC version 1.1.0, isl version isl-0.22.1-GMP
+        
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/9/include-fixed"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/9/../../../../x86_64-linux-gnu/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/lib/gcc/x86_64-linux-gnu/9/include
+         /usr/local/include
+         /usr/include/x86_64-linux-gnu
+         /usr/include
+        End of search list.
+        GNU C17 (Ubuntu 9.3.0-10kylin2) version 9.3.0 (x86_64-linux-gnu)
+        	compiled by GNU C version 9.3.0, GMP version 6.2.0, MPFR version 4.0.2, MPC version 1.1.0, isl version isl-0.22.1-GMP
+        
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        Compiler executable checksum: 72db622fd65937d6a3083f413a8a37f6
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+         as -v --64 -o CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o /tmp/cces5hTI.s
+        GNU assembler version 2.34 (x86_64-linux-gnu) using BFD version (GNU Binutils for Kylin) 2.34
+        COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+        Linking C executable cmTC_471e4
+        /home/alanx/.local/lib/python3.8/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_471e4.dir/link.txt --verbose=1
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/cc
+        COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper
+        OFFLOAD_TARGET_NAMES=nvptx-none:hsa
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-linux-gnu
+        Configured with: ../src/configure -v --with-pkgversion='Ubuntu 9.3.0-10kylin2' --with-bugurl=file:///usr/share/doc/gcc-9/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++,gm2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-9 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none,hsa --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+        Thread model: posix
+        gcc version 9.3.0 (Ubuntu 9.3.0-10kylin2) 
+        COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_471e4' '-mtune=generic' '-march=x86-64'
+         /usr/lib/gcc/x86_64-linux-gnu/9/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/9/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper -plugin-opt=-fresolution=/tmp/ccJa9Xfc.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_471e4 /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/9 -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/9/../../.. -v CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o
+        collect2 version 9.3.0
+        /usr/bin/ld -plugin /usr/lib/gcc/x86_64-linux-gnu/9/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper -plugin-opt=-fresolution=/tmp/ccJa9Xfc.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_471e4 /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/9 -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/9/../../.. -v CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o
+        GNU ld (GNU Binutils for Kylin) 2.34
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_471e4' '-mtune=generic' '-march=x86-64'
+        /usr/bin/cc  -v -Wl,-v CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -o cmTC_471e4
+        make[2]: Leaving directory '/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx'
+        make[1]: Leaving directory '/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx'
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerABI.cmake:217 (message)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/lib/gcc/x86_64-linux-gnu/9/include]
+          add: [/usr/local/include]
+          add: [/usr/include/x86_64-linux-gnu]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/lib/gcc/x86_64-linux-gnu/9/include] ==> [/usr/lib/gcc/x86_64-linux-gnu/9/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include/x86_64-linux-gnu] ==> [/usr/include/x86_64-linux-gnu]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/lib/gcc/x86_64-linux-gnu/9/include;/usr/local/include;/usr/include/x86_64-linux-gnu;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerABI.cmake:253 (message)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)))("|,| |$)]
+        ignore line: [Change Dir: '/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx']
+        ignore line: []
+        ignore line: [Run Build Command(s): /home/alanx/.local/lib/python3.8/site-packages/cmake/data/bin/cmake -E env VERBOSE=1 /usr/bin/make -f Makefile cmTC_471e4/fast]
+        ignore line: [make[1]: Entering directory '/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx']
+        ignore line: [/usr/bin/make  -f CMakeFiles/cmTC_471e4.dir/build.make CMakeFiles/cmTC_471e4.dir/build]
+        ignore line: [make[2]: Entering directory '/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/CMakeScratch/TryCompile-b6xKUx']
+        ignore line: [Building C object CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o]
+        ignore line: [/usr/bin/cc   -v -o CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -c /home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeCCompilerABI.c]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/cc]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:hsa]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 9.3.0-10kylin2' --with-bugurl=file:///usr/share/doc/gcc-9/README.Bugs --enable-languages=c ada c++ go brig d fortran objc obj-c++ gm2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-9 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none hsa --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [gcc version 9.3.0 (Ubuntu 9.3.0-10kylin2) ]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+        ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/9/cc1 -quiet -v -imultiarch x86_64-linux-gnu /home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeCCompilerABI.c -quiet -dumpbase CMakeCCompilerABI.c -mtune=generic -march=x86-64 -auxbase-strip CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/cces5hTI.s]
+        ignore line: [GNU C17 (Ubuntu 9.3.0-10kylin2) version 9.3.0 (x86_64-linux-gnu)]
+        ignore line: [	compiled by GNU C version 9.3.0  GMP version 6.2.0  MPFR version 4.0.2  MPC version 1.1.0  isl version isl-0.22.1-GMP]
+        ignore line: []
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/9/include-fixed"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/9/../../../../x86_64-linux-gnu/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/9/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include/x86_64-linux-gnu]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [GNU C17 (Ubuntu 9.3.0-10kylin2) version 9.3.0 (x86_64-linux-gnu)]
+        ignore line: [	compiled by GNU C version 9.3.0  GMP version 6.2.0  MPFR version 4.0.2  MPC version 1.1.0  isl version isl-0.22.1-GMP]
+        ignore line: []
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [Compiler executable checksum: 72db622fd65937d6a3083f413a8a37f6]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+        ignore line: [ as -v --64 -o CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o /tmp/cces5hTI.s]
+        ignore line: [GNU assembler version 2.34 (x86_64-linux-gnu) using BFD version (GNU Binutils for Kylin) 2.34]
+        ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+        ignore line: [Linking C executable cmTC_471e4]
+        ignore line: [/home/alanx/.local/lib/python3.8/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_471e4.dir/link.txt --verbose=1]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/cc]
+        ignore line: [COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:hsa]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-linux-gnu]
+        ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 9.3.0-10kylin2' --with-bugurl=file:///usr/share/doc/gcc-9/README.Bugs --enable-languages=c ada c++ go brig d fortran objc obj-c++ gm2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-9 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none hsa --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [gcc version 9.3.0 (Ubuntu 9.3.0-10kylin2) ]
+        ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_471e4' '-mtune=generic' '-march=x86-64']
+        link line: [ /usr/lib/gcc/x86_64-linux-gnu/9/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/9/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper -plugin-opt=-fresolution=/tmp/ccJa9Xfc.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_471e4 /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/9 -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/9/../../.. -v CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/9/collect2] ==> ignore
+          arg [-plugin] ==> ignore
+          arg [/usr/lib/gcc/x86_64-linux-gnu/9/liblto_plugin.so] ==> ignore
+          arg [-plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper] ==> ignore
+          arg [-plugin-opt=-fresolution=/tmp/ccJa9Xfc.res] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [elf_x86_64] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-znow] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_471e4] ==> ignore
+          arg [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/9] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/9]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib]
+          arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+          arg [-L/lib/../lib] ==> dir [/lib/../lib]
+          arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+          arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
+          arg [-L/usr/lib/gcc/x86_64-linux-gnu/9/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../..]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [-lc] ==> lib [c]
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [/usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o]
+          arg [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o]
+        ignore line: [collect2 version 9.3.0]
+        ignore line: [/usr/bin/ld -plugin /usr/lib/gcc/x86_64-linux-gnu/9/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper -plugin-opt=-fresolution=/tmp/ccJa9Xfc.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_471e4 /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/9 -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/9/../../.. -v CMakeFiles/cmTC_471e4.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o]
+        linker tool for 'C': /usr/bin/ld
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o] ==> [/usr/lib/x86_64-linux-gnu/Scrt1.o]
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o] ==> [/usr/lib/x86_64-linux-gnu/crti.o]
+        collapse obj [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o] ==> [/usr/lib/x86_64-linux-gnu/crtn.o]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/9] ==> [/usr/lib/gcc/x86_64-linux-gnu/9]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib] ==> [/usr/lib]
+        collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+        collapse library dir [/lib/../lib] ==> [/lib]
+        collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+        collapse library dir [/usr/lib/../lib] ==> [/usr/lib]
+        collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../..] ==> [/usr/lib]
+        implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+        implicit objs: [/usr/lib/x86_64-linux-gnu/Scrt1.o;/usr/lib/x86_64-linux-gnu/crti.o;/usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o;/usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o;/usr/lib/x86_64-linux-gnu/crtn.o]
+        implicit dirs: [/usr/lib/gcc/x86_64-linux-gnu/9;/usr/lib/x86_64-linux-gnu;/usr/lib;/lib/x86_64-linux-gnu;/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/Internal/CMakeDetermineLinkerId.cmake:38 (message)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeDetermineCompilerABI.cmake:299 (cmake_determine_linker_id)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the C compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils for Kylin) 2.34
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:517 (find_program)"
+      - "CMakeLists.txt:8 (find_package)"
+    mode: "program"
+    variable: "PKG_CONFIG_EXECUTABLE"
+    description: "pkg-config executable"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "pkg-config"
+      - "pkgconf"
+    candidate_directories:
+      - "/home/alanx/.local/bin/"
+      - "/home/alanx/.bun/bin/"
+      - "/home/alanx/.opencode/bin/"
+      - "/home/alanx/.copaw/bin/"
+      - "/home/alanx/.pyenv/shims/"
+      - "/home/alanx/.pyenv/bin/"
+      - "/home/alanx/.cargo/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains/"
+      - "/home/alanx/.costrict/bin/"
+      - "/usr/local/Typora-linux-x64/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/bin/"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/sbin/"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/home/alanx/.local/bin/pkg-config"
+      - "/home/alanx/.local/bin/pkgconf"
+      - "/home/alanx/.bun/bin/pkg-config"
+      - "/home/alanx/.bun/bin/pkgconf"
+      - "/home/alanx/.opencode/bin/pkg-config"
+      - "/home/alanx/.opencode/bin/pkgconf"
+      - "/home/alanx/.copaw/bin/pkg-config"
+      - "/home/alanx/.copaw/bin/pkgconf"
+      - "/home/alanx/.pyenv/shims/pkg-config"
+      - "/home/alanx/.pyenv/shims/pkgconf"
+      - "/home/alanx/.pyenv/bin/pkg-config"
+      - "/home/alanx/.pyenv/bin/pkgconf"
+      - "/home/alanx/.cargo/bin/pkg-config"
+      - "/home/alanx/.cargo/bin/pkgconf"
+      - "/usr/local/sbin/pkg-config"
+      - "/usr/local/sbin/pkgconf"
+      - "/usr/local/bin/pkg-config"
+      - "/usr/local/bin/pkgconf"
+      - "/usr/sbin/pkg-config"
+      - "/usr/sbin/pkgconf"
+    found: "/usr/bin/pkg-config"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:761 (find_library)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:811 (_pkg_find_libs)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:1149 (_pkg_recalculate)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:1166 (_pkg_check_modules_internal)"
+      - "CMakeLists.txt:9 (pkg_check_modules)"
+    mode: "library"
+    variable: "pkgcfg_lib_LIBEVENT_event_pthreads"
+    description: "Path to a library."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "event_pthreads"
+    candidate_directories:
+      - "/usr/lib/x86_64-linux-gnu/"
+    found: "/usr/lib/x86_64-linux-gnu/libevent_pthreads.so"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_LIBRARY_PATH:
+        - "/usr/lib/X11"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:761 (find_library)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:811 (_pkg_find_libs)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:1149 (_pkg_recalculate)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:1166 (_pkg_check_modules_internal)"
+      - "CMakeLists.txt:9 (pkg_check_modules)"
+    mode: "library"
+    variable: "pkgcfg_lib_LIBEVENT_event"
+    description: "Path to a library."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "event"
+    candidate_directories:
+      - "/usr/lib/x86_64-linux-gnu/"
+    found: "/usr/lib/x86_64-linux-gnu/libevent.so"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_LIBRARY_PATH:
+        - "/usr/lib/X11"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:761 (find_library)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:811 (_pkg_find_libs)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:1149 (_pkg_recalculate)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:1166 (_pkg_check_modules_internal)"
+      - "CMakeLists.txt:10 (pkg_check_modules)"
+    mode: "library"
+    variable: "pkgcfg_lib_LIBCURL_curl"
+    description: "Path to a library."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "curl"
+    candidate_directories:
+      - "/usr/lib/x86_64-linux-gnu/"
+    found: "/usr/lib/x86_64-linux-gnu/libcurl.so"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_LIBRARY_PATH:
+        - "/usr/lib/X11"
+...
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:761 (find_library)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:811 (_pkg_find_libs)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:1149 (_pkg_recalculate)"
+      - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data/share/cmake-4.2/Modules/FindPkgConfig.cmake:1166 (_pkg_check_modules_internal)"
+      - "CMakeLists.txt:11 (pkg_check_modules)"
+    mode: "library"
+    variable: "pkgcfg_lib_CJSON_cjson"
+    description: "Path to a library."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "cjson"
+    candidate_directories:
+      - "/usr/lib/x86_64-linux-gnu/"
+    found: "/usr/lib/x86_64-linux-gnu/libcjson.so"
+    search_context:
+      ENV{PATH}:
+        - "/home/alanx/.pi/agent/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/shims"
+        - "/home/alanx/.pyenv/bin"
+        - "/home/alanx/.local/bin"
+        - "/home/alanx/.bun/bin"
+        - "/home/alanx/.opencode/bin"
+        - "/home/alanx/.cargo/bin"
+        - "/home/alanx/.copaw/bin"
+        - "/home/alanx/.pyenv/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+        - "/home/alanx/data/git/autoglm/command-line-tools/sdk/default/openharmony/toolchains"
+        - "/home/alanx/.costrict/bin"
+        - "/usr/local/Typora-linux-x64/"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/home/alanx/.local/lib/python3.8/site-packages/cmake/data"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_LIBRARY_PATH:
+        - "/usr/lib/X11"
+...

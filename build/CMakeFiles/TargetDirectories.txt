@@ -1,0 +1,7 @@
+/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/cc-oai-gateway.dir
+/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/edit_cache.dir
+/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/rebuild_cache.dir
+/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/list_install_components.dir
+/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/install.dir
+/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/install/local.dir
+/home/alanx/data/claude-code-openai-gateway/build/CMakeFiles/install/strip.dir

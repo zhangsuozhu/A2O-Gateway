@@ -1,0 +1,9 @@
+{
+  "model": "qwen-coder",
+  "max_tokens": 1024,
+  "system": "You are a precise coding assistant.",
+  "messages": [
+    {"role": "user", "content": "Write a C function that reverses a string in place."}
+  ],
+  "stream": false
+}

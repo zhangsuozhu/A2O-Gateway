@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>网关配置</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0b1120;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+    header{background:#131c31;border-bottom:1px solid #1e2d4a;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+    header h1{font-size:19px;font-weight:650}
+    header .sub{color:#8899b4;font-size:12px;margin-top:1px}
+    main{max-width:1060px;margin:0 auto;padding:18px}
+    .card{background:#131c31;border:1px solid #1e2d4a;border-radius:11px;padding:18px;margin-bottom:14px}
+    .card h2{font-size:15px;font-weight:600;margin-bottom:12px}
+    .row{display:flex;flex-wrap:wrap;gap:10px}
+    .row>*{flex:1;min-width:140px}
+    label{display:block;font-size:11px;color:#8899b4;margin-bottom:3px;font-weight:500}
+    input,textarea,select{width:100%;padding:7px 9px;background:#0a1120;border:1px solid #1e2d4a;border-radius:6px;color:#e2e8f0;font-size:13px;font-family:inherit;outline:none}
+    input:focus,textarea:focus,select:focus{border-color:#3b82f6}
+    textarea{font-family:ui-monospace,monospace;font-size:12px;min-height:44px;resize:vertical}
+    button{padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:550;background:#3b82f6;color:#fff;cursor:pointer}
+    button:hover{background:#2563eb}
+    button.ghost{background:transparent;border:1px solid #1e2d4a;color:#c8d2e6}
+    button.ghost:hover{background:rgba(255,255,255,.06)}
+    button.green{background:#22c55e}
+    button.green:hover{background:#16a34a}
+    button.red{background:#ef4444}
+    button.red:hover{background:#dc2626}
+    button.sm{font-size:11px;padding:3px 8px}
+    .hdr{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .mc{border:1px solid #1e2d4a;border-radius:9px;padding:14px;margin-bottom:10px;background:#0e1729}
+    .mc.act{border-color:#22c55e;box-shadow:0 0 0 1px rgba(34,197,94,.2)}
+    .mc-new{border-color:#3b82f6;animation:glow 1.5s ease-out}
+    @keyframes glow{0%{border-color:#3b82f6;box-shadow:0 0 12px rgba(59,130,246,.4)}100%{border-color:#1e2d4a;box-shadow:0 0 0 0 transparent}}
+    .mh{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+    .badge{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;font-size:10px;font-weight:600;background:#1a2744;color:#8899b4}
+    .badge.def{background:rgba(34,197,94,.15);color:#22c55e}
+    .badge.off{background:rgba(239,68,68,.12);color:#ef4444}
+    .g2{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:7px}
+    .g3{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:7px}
+    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#131c31;border:1px solid #22c55e;color:#86efac;padding:9px 18px;border-radius:7px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+    .toast.show{opacity:1}
+    .toast.err{border-color:#ef4444;color:#fca5a5}
+    .empty{text-align:center;padding:32px 16px;color:#8899b4}
+    .empty p{margin-bottom:10px}
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;justify-content:center;align-items:center}
+    .modal-overlay.show{display:flex}
+    .modal{background:#131c31;border:1px solid #1e2d4a;border-radius:12px;padding:22px;width:90%;max-width:480px;max-height:90vh;overflow-y:auto}
+    .modal h2{font-size:16px;font-weight:600;margin-bottom:3px}
+    .modal .sub{color:#8899b4;font-size:12px;margin-bottom:16px}
+    .modal .f{margin-bottom:12px}
+    .modal .f label{text-transform:none;letter-spacing:0;font-size:12px}
+    .modal .f input{padding:9px 11px;font-size:13px}
+    .ma{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+    .ma button{padding:8px 18px;font-size:13px}
+    .loading{text-align:center;padding:40px;color:#8899b4;font-size:14px}
+    .error-box{text-align:center;padding:40px;color:#fca5a5}
+    .error-box p{margin-bottom:10px}
+    #loading{display:block}
+    #loaded{display:none}
+    @media(max-width:700px){.g2,.g3{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>⚡ Claude Code 网关</h1>
+    <div class="sub" id="headerStatus">加载中...</div>
+  </div>
+  <div class="hdr">
+    <button class="ghost sm" id="envBtn" onclick="toggleEnv()" style="display:none">🔑 连接信息</button>
+    <button class="green" id="saveBtn" onclick="save()" style="display:none">💾 保存</button>
+    <button id="addBtn" onclick="showAddModal()" style="display:none">＋ 添加模型</button>
+  </div>
+</header>
+
+<main>
+  <div id="loading" class="loading">⏳ 加载配置中...</div>
+  <div id="errorBox" class="error-box" style="display:none">
+    <p>❌ 加载失败</p>
+    <p id="errorMsg" style="font-size:13px;color:#8899b4"></p>
+    <button onclick="init()">🔄 重试</button>
+  </div>
+
+  <div id="loaded">
+    <div class="card">
+      <h2>⚙️ 全局</h2>
+      <div class="row">
+        <div><label>监听端口</label><input id="port" type="number" /></div>
+        <div><label>Gateway API Key</label><input id="gwKey" placeholder="Claude Code 用此 token 连接" /></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🤖 模型列表 <span id="modelCount" style="font-size:12px;font-weight:400;color:#8899b4"></span></h2>
+      <div id="models"></div>
+      <div class="empty" id="emptyHint" style="display:none">
+        <p>还没有配置模型</p>
+        <button onclick="showAddModal()">＋ 添加第一个模型</button>
+      </div>
+    </div>
+
+    <div id="envSection" style="display:none">
+      <div class="card">
+        <h2>🔑 Claude Code 连接信息</h2>
+        <p style="font-size:12px;color:#8899b4;margin-bottom:8px">设置以下环境变量即可用 Claude Code 连接本网关</p>
+        <div class="env-box" style="background:#060d1a;border:1px solid #1e2d4a;border-radius:7px;padding:11px;font-family:ui-monospace,monospace;font-size:12px;overflow-x:auto;white-space:pre-wrap;color:#c8d2e6"></div>
+        <div style="margin-top:7px"><button class="ghost sm" onclick="copyEnv()">📋 复制</button></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <h2>添加模型</h2>
+    <div class="sub">填写必填信息后创建，其他参数稍后在卡片中修改</div>
+    <div class="f"><label>模型 ID *</label><input id="modalId" placeholder="例如: qwen-coder" /></div>
+    <div class="f"><label>模型厂商</label><input id="modalProvider" placeholder="例如: aliyun-bailian, deepseek, openai" /></div>
+    <div class="f"><label>Base URL *</label><input id="modalBaseUrl" placeholder="https://api.example.com/v1" /></div>
+    <div class="f"><label>上游真实模型名 *</label><input id="modalUpstream" placeholder="例如: qwen3-coder-plus" /></div>
+    <div class="f"><label>API Key *</label><input id="modalApiKey" type="text" placeholder="输入上游的 API Key" /></div>
+    <div class="ma">
+      <button class="ghost" onclick="hideAddModal()">取消</button>
+      <button class="green" onclick="confirmAdd()">✓ 添加</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── 状态 ──
+let cfg = null;
+let dirty = false;
+
+// ── 工具 ──
+function $(id) { return document.getElementById(id); }
+function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+function toast(msg, isErr) {
+  var el = $('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(function() { el.classList.remove('show'); }, 2500);
+}
+
+// ── 初始化 ──
+async function init() {
+  $('loading').style.display = 'block';
+  $('loaded').style.display = 'none';
+  $('errorBox').style.display = 'none';
+  $('headerStatus').textContent = '加载中...';
+
+  try {
+    var r = await fetch('/admin/api/config');
+    if (!r.ok) {
+      var text = await r.text();
+      showError('HTTP ' + r.status + ': ' + text);
+      return;
+    }
+    cfg = await r.json();
+    render();
+    $('loading').style.display = 'none';
+    $('loaded').style.display = 'block';
+    $('headerStatus').textContent = '已加载 ' + (cfg.models || []).length + ' 个模型';
+  } catch(e) {
+    showError(e.message || String(e));
+  }
+}
+
+function showError(msg) {
+  $('loading').style.display = 'none';
+  $('errorBox').style.display = 'block';
+  $('errorMsg').textContent = msg;
+  $('headerStatus').textContent = '❌ 加载失败';
+}
+
+// ── 渲染 ──
+function render() {
+  if (!cfg) return;
+  cfg.models = cfg.models || [];
+  $('port').value = cfg.listen_port || 8080;
+  $('gwKey').value = cfg.gateway_api_key || '';
+  $('saveBtn').style.display = '';
+  $('addBtn').style.display = '';
+  $('envBtn').style.display = '';
+  renderModels();
+}
+
+function renderModels() {
+  var box = $('models');
+  var hint = $('emptyHint');
+  box.innerHTML = '';
+  if (!cfg.models.length) {
+    hint.style.display = '';
+    $('modelCount').textContent = '';
+    return;
+  }
+  hint.style.display = 'none';
+  $('modelCount').textContent = '— ' + cfg.models.length + ' 个模型';
+  for (var i = 0; i < cfg.models.length; i++) {
+    box.appendChild(createModel(cfg.models[i], i));
+  }
+}
+
+function escAttr(v) {
+  return esc(v);
+}
+
+function createModel(m, i) {
+  var active = (m.id === cfg.active_model);
+  var en = (m.enabled !== false);
+  var div = document.createElement('div');
+  div.className = 'mc' + (active ? ' act' : '');
+  div.setAttribute('data-idx', i);
+
+  // 构建内部 HTML
+  var html = '';
+  // 头部
+  html += '<div class="mh">';
+  html += '  <div class="hdr">';
+  html += '    <span class="badge">#' + (i+1) + '</span>';
+  if (active) html += '    <span class="badge def">★ 当前默认</span>';
+  html += '    <span class="badge ' + (en ? '' : 'off') + '">' + (en ? '启用' : '禁用') + '</span>';
+  html += '  </div>';
+  html += '  <div class="hdr">';
+  if (!active) html += '    <button class="green sm" onclick="setActive(' + i + ')">★ 设为默认</button>';
+  html += '    <button class="ghost sm" onclick="dup(' + i + ')">📋 复制</button>';
+  html += '    <button class="red sm" onclick="del(' + i + ')">🗑</button>';
+  html += '  </div>';
+  html += '</div>';
+
+  // 基本信息
+  html += '<div class="g3" style="margin-bottom:6px">';
+  html += '  <div><label>模型 ID</label><input class="fi" data-idx="' + i + '" data-k="id" value="' + escAttr(m.id) + '" /></div>';
+  html += '  <div><label>模型厂商</label><input class="fi" data-idx="' + i + '" data-k="provider" value="' + escAttr(m.provider || '') + '" placeholder="aliyun, deepseek" /></div>';
+  html += '  <div><label>显示名称</label><input class="fi" data-idx="' + i + '" data-k="display_name" value="' + escAttr(m.display_name || '') + '" /></div>';
+  html += '  <div><label>状态</label><select class="fi" data-idx="' + i + '" data-k="enabled"><option value="true"' + (en?' selected':'') + '>启用</option><option value="false"' + (!en?' selected':'') + '>禁用</option></select></div>';
+  html += '</div>';
+
+  // 接口信息
+  html += '<div class="g3" style="margin-bottom:6px">';
+  html += '  <div><label>Base URL</label><input class="fi" data-idx="' + i + '" data-k="base_url" value="' + escAttr(m.base_url || '') + '" placeholder="https://api.example.com/v1" /></div>';
+  html += '  <div><label>Endpoint（可选）</label><input class="fi" data-idx="' + i + '" data-k="endpoint" value="' + escAttr(m.endpoint || '') + '" placeholder="留空则用 Base URL + /chat/completions" /></div>';
+  html += '  <div><label>上游模型名</label><input class="fi" data-idx="' + i + '" data-k="upstream_model" value="' + escAttr(m.upstream_model || '') + '" placeholder="如 qwen3-coder-plus" /></div>';
+  html += '  <div><label>API Key</label><input class="fi" data-idx="' + i + '" data-k="api_key" value="' + escAttr(m.api_key || '') + '" type="text" style="font-family:monospace" /></div>';
+  html += '</div>';
+
+  // 参数
+  html += '<div class="g2" style="margin-bottom:5px">';
+  html += '  <div><label>Temperature</label><input class="fp" data-idx="' + i + '" data-k="temperature" type="number" step="0.01" min="0" max="2" value="' + (m.params && m.params.temperature != null ? m.params.temperature : '') + '" placeholder="0.2" /></div>';
+  html += '  <div><label>Top P</label><input class="fp" data-idx="' + i + '" data-k="top_p" type="number" step="0.01" min="0" max="1" value="' + (m.params && m.params.top_p != null ? m.params.top_p : '') + '" placeholder="0.95" /></div>';
+  html += '  <div><label>Max Tokens</label><input class="fp" data-idx="' + i + '" data-k="max_tokens" type="number" step="1" min="1" value="' + (m.params && m.params.max_tokens != null ? m.params.max_tokens : '') + '" placeholder="默认" /></div>';
+  var stopVal = '';
+  if (m.params && m.params.stop) {
+    stopVal = Array.isArray(m.params.stop) ? m.params.stop.join(',') : String(m.params.stop);
+  }
+  html += '  <div><label>Stop（逗号分隔）</label><input class="fp" data-idx="' + i + '" data-k="stop" value="' + escAttr(stopVal) + '" placeholder="如: Human:, Assistant:" /></div>';
+  html += '</div>';
+
+  // extra_body
+  html += '<div><label style="font-weight:400;text-transform:none">extra_body JSON（厂商扩展）</label>';
+  html += '<textarea class="fi" data-idx="' + i + '" data-k="extra_body" rows="2" placeholder=\'{"enable_search":true}\'>' + esc(JSON.stringify(m.extra_body || {}, null, 2)) + '</textarea></div>';
+
+  div.innerHTML = html;
+
+  // 绑定变更事件
+  var inputs = div.querySelectorAll('.fi, .fp');
+  for (var j = 0; j < inputs.length; j++) {
+    inputs[j].addEventListener('change', function() { collect(); markDirty(); });
+    inputs[j].addEventListener('input', function() { markDirty(); });
+  }
+
+  return div;
+}
+
+// ── 数据收集 ──
+function collectOne(i) {
+  var m = {};
+  var fields = document.querySelectorAll('.fi[data-idx="' + i + '"]');
+  for (var j = 0; j < fields.length; j++) {
+    var el = fields[j];
+    var k = el.getAttribute('data-k');
+    if (k === 'enabled') m[k] = el.value === 'true';
+    else if (k === 'extra_body') { try { m[k] = el.value.trim() ? JSON.parse(el.value) : {}; } catch(e) {} }
+    else m[k] = el.value;
+  }
+  var p = {};
+  var params = document.querySelectorAll('.fp[data-idx="' + i + '"]');
+  for (var j = 0; j < params.length; j++) {
+    var el = params[j];
+    var k = el.getAttribute('data-k');
+    var v = el.value.trim();
+    if (!v) continue;
+    if (k === 'stop') p[k] = v.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    else if (['temperature','top_p','max_tokens','frequency_penalty','presence_penalty'].indexOf(k) >= 0) p[k] = Number(v);
+    else p[k] = v;
+  }
+  if (Object.keys(p).length) m.params = p;
+  return m;
+}
+
+function collect() {
+  if (!cfg) return;
+  cfg.listen_port = Number($('port').value) || 8080;
+  cfg.gateway_api_key = $('gwKey').value;
+  var arr = [];
+  var cards = document.querySelectorAll('.mc');
+  for (var i = 0; i < cards.length; i++) {
+    arr.push(collectOne(i));
+  }
+  if (arr.length) cfg.models = arr;
+  return cfg;
+}
+
+function markDirty() {
+  if (!dirty) { dirty = true; $('headerStatus').textContent = '⚠️ 有未保存修改'; }
+}
+
+// ── 操作 ──
+function setActive(i) {
+  cfg.active_model = cfg.models[i].id;
+  renderModels();
+  fetch('/admin/api/switch', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({active_model: cfg.active_model})
+  }).then(function(r) {
+    if (r.ok) toast('✅ 已切换为: ' + cfg.active_model);
+    else r.text().then(function(t) { toast('切换失败: ' + t, true); });
+  });
+}
+
+function add() { showAddModal(); }
+
+function dup(i) {
+  var cp = JSON.parse(JSON.stringify(collectOne(i)));
+  cp.id = cp.id + '-copy';
+  cfg.models.splice(i+1, 0, cp);
+  renderModels();
+  markDirty();
+  toast('📋 已复制: ' + cp.id);
+}
+
+function del(i) {
+  if (!confirm('删除模型 "' + cfg.models[i].id + '"？')) return;
+  var deleted = cfg.models[i].id;
+  cfg.models.splice(i, 1);
+  if (cfg.active_model === deleted && cfg.models.length > 0) cfg.active_model = cfg.models[0].id;
+  renderModels();
+  toast('已删除: ' + deleted);
+}
+
+// ── 保存 ──
+async function save() {
+  var data = collect();
+  var r = await fetch('/admin/api/config', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  if (!r.ok) { var t = await r.text(); toast('保存失败: ' + t, true); return; }
+  dirty = false;
+  // 保存后重新加载
+  var r2 = await fetch('/admin/api/config');
+  if (r2.ok) { cfg = await r2.json(); render(); }
+  $('headerStatus').textContent = '💾 已保存 — 共 ' + cfg.models.length + ' 个模型';
+  toast('💾 已保存，全部生效', 'save');
+}
+
+// ── 弹窗 ──
+function showAddModal() {
+  $('modalId').value = '';
+  $('modalProvider').value = '';
+  $('modalBaseUrl').value = '';
+  $('modalUpstream').value = '';
+  $('modalApiKey').value = '';
+  $('addModal').classList.add('show');
+  setTimeout(function() { $('modalId').focus(); }, 100);
+}
+function hideAddModal() { $('addModal').classList.remove('show'); }
+
+function confirmAdd() {
+  var id = $('modalId').value.trim();
+  var provider = $('modalProvider').value.trim();
+  var base_url = $('modalBaseUrl').value.trim();
+  var upstream_model = $('modalUpstream').value.trim();
+  var api_key = $('modalApiKey').value.trim();
+  if (!id) { toast('请输入模型 ID', true); $('modalId').focus(); return; }
+  if (!base_url) { toast('请输入 Base URL', true); $('modalBaseUrl').focus(); return; }
+  if (!upstream_model) { toast('请输入上游真实模型名', true); $('modalUpstream').focus(); return; }
+  if (!api_key) { toast('请输入 API Key', true); $('modalApiKey').focus(); return; }
+
+  if (!cfg) cfg = {models:[]};
+  cfg.models = cfg.models || [];
+  cfg.models.push({
+    id: id,
+    provider: provider,
+    display_name: provider ? provider + ' - ' + upstream_model : upstream_model,
+    interface: 'openai_chat_completions',
+    base_url: base_url,
+    endpoint: '',
+    api_key: api_key,
+    upstream_model: upstream_model,
+    enabled: true,
+    params: {temperature: 0.2, top_p: 0.95},
+    extra_body: {}
+  });
+  if (!cfg.active_model) cfg.active_model = id;
+  hideAddModal();
+  renderModels();
+  var cards = document.querySelectorAll('.mc');
+  if (cards.length) {
+    cards[cards.length-1].classList.add('mc-new');
+    cards[cards.length-1].scrollIntoView({behavior:'smooth', block:'nearest'});
+    setTimeout(function() { cards[cards.length-1].classList.remove('mc-new'); }, 2000);
+  }
+  markDirty();
+  toast('✅ 已添加: ' + id);
+}
+
+// ── 连接信息 ──
+function toggleEnv() {
+  var sec = $('envSection');
+  var btn = $('envBtn');
+  if (sec.style.display !== 'none') { sec.style.display = 'none'; btn.textContent = '🔑 连接信息'; return; }
+  collect();
+  var host = location.hostname;
+  var port = cfg.listen_port || 8080;
+  var key = cfg.gateway_api_key || 'cc-local-token';
+  var model = cfg.active_model || (cfg.models[0] || {}).id || 'model-id';
+  sec.querySelector('.env-box').textContent =
+    'export ANTHROPIC_BASE_URL="http://' + host + ':' + port + '"\n' +
+    'export ANTHROPIC_AUTH_TOKEN="' + key + '"\n' +
+    'export ANTHROPIC_API_KEY="' + key + '"\n' +
+    'export ANTHROPIC_MODEL="' + model + '"\n' +
+    'export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1\n\n' +
+    'claude --model "' + model + '"';
+  sec.style.display = '';
+  btn.textContent = '🔑 收起';
+}
+
+function copyEnv() {
+  var t = $('envSection').querySelector('.env-box').textContent;
+  navigator.clipboard.writeText(t).then(function() { toast('📋 已复制'); });
+}
+
+// ── 键盘 ──
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') hideAddModal();
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (cfg) save(); }
+});
+
+// 点击遮罩关闭弹窗
+$('addModal').addEventListener('click', function(e) {
+  if (e.target === e.currentTarget) hideAddModal();
+});
+
+// ── 启动 ──
+init();
+</script>
+</body>
+</html>

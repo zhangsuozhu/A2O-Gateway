@@ -1,0 +1,8 @@
+{
+  "model": "qwen-coder",
+  "max_tokens": 1024,
+  "messages": [
+    {"role": "user", "content": "用三句话解释 epoll 的边沿触发。"}
+  ],
+  "stream": true
+}

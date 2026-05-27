@@ -1,0 +1,25 @@
+{
+	"listen_host":	"0.0.0.0",
+	"listen_port":	8081,
+	"gateway_api_key":	"cc-local-token",
+	"admin_token":	"admin-local-token",
+	"worker_threads":	4,
+	"models":	[{
+			"id":	"deepseek-v4-flash",
+			"provider":	"sensenova",
+			"display_name":	"sensenova - deepseek-v4-flash",
+			"enabled":	true,
+			"base_url":	"https://token.sensenova.cn/v1",
+			"endpoint":	"",
+			"upstream_model":	"deepseek-v4-flash",
+			"api_key":	"sk-kDukwRQKyLecSnUbPppN2yV9QsWVWJXG",
+			"extra_body":	{
+			},
+			"params":	{
+				"temperature":	0.2,
+				"top_p":	0.95,
+				"max_tokens":	1000000
+			}
+		}],
+	"active_model":	"deepseek-v4-flash"
+}

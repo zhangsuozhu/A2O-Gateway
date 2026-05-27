@@ -1,0 +1,23 @@
+{
+	"listen_host":	"0.0.0.0",
+	"listen_port":	8080,
+	"gateway_api_key":	"cc-local-token",
+	"admin_token":	"admin-local-token",
+	"worker_threads":	4,
+	"active_model":	"deepseek-coder",
+	"models":	[{
+			"id":	"deepseek-coder",
+			"provider":	"deepseek-openai-compatible",
+			"display_name":	"DeepSeek Coder",
+			"enabled":	false,
+			"base_url":	"https://api.deepseek.com/v1",
+			"endpoint":	"",
+			"upstream_model":	"deepseek-chat",
+			"extra_body":	{
+			},
+			"params":	{
+				"temperature":	0.2
+			},
+			"api_key":	"YOUR_DEEPSEEK_API_KEY"
+		}]
+}

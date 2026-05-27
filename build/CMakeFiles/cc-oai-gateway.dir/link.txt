@@ -1,0 +1,1 @@
+/usr/bin/cc -Wall -Wextra -Wno-unused-parameter -O1 -g -fsanitize=address -fno-omit-frame-pointer -Wall -Wextra -Wno-unused-parameter -O2 -g "CMakeFiles/cc-oai-gateway.dir/src/main.c.o" -o cc-oai-gateway  -levent_pthreads -levent -lcurl -lcjson -lpthread
