@@ -34,7 +34,7 @@ Claude Code
 |------|------|
 | 协议转换 | Anthropic Messages API → OpenAI Chat Completions |
 | 流式支持 | SSE 流式转换（OpenAI chunk → Anthropic stream events） |
-| 工具调用转换 | Anthropic tools/tool_use ↔ OpenAI tools/tool_calls |
+| 工具调用转换 | Anthropic tools/tool_use ↔ OpenAI tools/tool_calls，流式场景稳定 |
 | 多模型支持 | 可配置多个模型/厂商 |
 | 模型切换 | Web 界面一键切换默认模型 |
 | 多线程 | libcurl multi + worker 线程池，连接复用 |
@@ -107,6 +107,8 @@ vim config/gateway.local.json
 ```
 
 启动后访问 Web 管理界面：http://127.0.0.1:8080/admin
+
+网关自动在运行目录生成 `gateway.log`，记录 INFO / ERROR / DEBUG 级别日志，便于排查问题。
 
 > **提示**：如果 8080 端口被占用，修改配置文件的 `listen_port` 后重启即可。
 
@@ -498,11 +500,12 @@ services:
 - libcurl multi 会自动复用 HTTP 连接
 - 如果上游延迟高，可考虑增加 worker 线程数
 
-### 8.3 监控
+### 8.3 日志与监控
 
-- 使用 `/healthz` 和 `/readyz` 做健康检查
-- 配合 Prometheus + Grafana 可采集 metrics（需自行扩展）
-- 日志格式为 `[时间] 级别  消息`，可对接标准日志收集系统
+- **日志文件**：启动后自动在运行目录创建 `gateway.log`，包含 DEBUG / INFO / ERROR 级别日志。日志格式为 `[时间] 级别  消息`
+- **调试日志**：启动后 DEBUG 级别会记录请求体、上游响应、SSE 事件等详细信息，无需额外配置即可排查问题
+- **健康检查**：使用 `/healthz` 和 `/readyz` 做健康检查
+- **指标采集**：配合 Prometheus + Grafana 可采集 metrics（需自行扩展）
 
 ---
 
@@ -564,6 +567,13 @@ kill -TERM <pid>
 # 或
 pkill cc-oai-gateway
 ```
+
+### Q: 网关自动生成了 `gateway.log`，文件很大怎么办？
+
+日志文件按追加模式写入，不会自动轮转。建议：
+1. 生产环境配合 `logrotate` 管理日志轮转
+2. 如果只需排查问题，排查后删除或清空日志文件
+3. `gateway.log` 包含 DEBUG 级别请求/响应体信息，请注意敏感数据
 
 ---
 

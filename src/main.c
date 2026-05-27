@@ -47,6 +47,7 @@ typedef struct tool_stream_state {
     int openai_index;
     int block_index;
     bool started;
+    bool start_emitted;
     char *id;
     char *name;
 } tool_stream_state_t;
@@ -101,7 +102,17 @@ struct gateway_job {
     struct curl_slist *headers;
     worker_t *worker;
     gateway_job_t *next;
+    // Thread-safe deferred send fields
+    pthread_mutex_t send_mu;
+    struct evbuffer *send_buf;
+    bool send_start;
+    bool send_end;
+    char *nonstream_json;
+    int nonstream_code;
 };
+
+static void deferred_send(evutil_socket_t fd, short what, void *arg);
+static void job_free(gateway_job_t *job);
 
 static app_config_t G;
 static struct event_base *BASE = NULL;
@@ -111,18 +122,36 @@ static int WORKER_COUNT = 4;
 static unsigned long RR = 0;
 static volatile sig_atomic_t STOP = 0;
 
+static FILE *LOG_FP = NULL;
+static pthread_mutex_t LOG_MU = PTHREAD_MUTEX_INITIALIZER;
+
 static void log_msg(const char *level, const char *fmt, ...) {
     char ts[64];
     time_t now = time(NULL);
     struct tm tmv;
     localtime_r(&now, &tmv);
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S%z", &tmv);
-    fprintf(stderr, "[%s] %-5s ", ts, level);
+    char buf[8192];
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    fprintf(stderr, "\n");
+    if (n < 0) n = 0;
+    if ((size_t)n >= sizeof(buf)) n = (int)sizeof(buf) - 1;
+    pthread_mutex_lock(&LOG_MU);
+    fprintf(stderr, "[%s] %-5s %.*s\n", ts, level, n, buf);
+    if (LOG_FP) {
+        fprintf(LOG_FP, "[%s] %-5s %.*s\n", ts, level, n, buf);
+        fflush(LOG_FP);
+    }
+    pthread_mutex_unlock(&LOG_MU);
+}
+
+static void log_open(const char *path) {
+    pthread_mutex_lock(&LOG_MU);
+    if (LOG_FP) { fclose(LOG_FP); LOG_FP = NULL; }
+    if (path) LOG_FP = fopen(path, "a");
+    pthread_mutex_unlock(&LOG_MU);
 }
 
 static char *xstrdup(const char *s) {
@@ -811,13 +840,19 @@ static cJSON *openai_message_to_anthropic_content(cJSON *msg) {
             cJSON *fn = cJSON_GetObjectItemCaseSensitive(tc, "function");
             const char *id = json_get_str(tc, "id");
             const char *name = fn ? json_get_str(fn, "name") : NULL;
-            const char *args = fn ? json_get_str(fn, "arguments") : NULL;
             if (!name) continue;
             cJSON *b = cJSON_CreateObject();
             cJSON_AddStringToObject(b, "type", "tool_use");
             cJSON_AddStringToObject(b, "id", id ? id : make_id("toolu"));
             cJSON_AddStringToObject(b, "name", name);
-            cJSON_AddItemToObject(b, "input", json_from_string_or_empty_object(args));
+            cJSON *args_obj = fn ? cJSON_GetObjectItemCaseSensitive(fn, "arguments") : NULL;
+            if (cJSON_IsString(args_obj)) {
+                cJSON_AddItemToObject(b, "input", json_from_string_or_empty_object(args_obj->valuestring));
+            } else if (cJSON_IsObject(args_obj)) {
+                cJSON_AddItemToObject(b, "input", cJSON_Duplicate(args_obj, 1));
+            } else {
+                cJSON_AddItemToObject(b, "input", cJSON_CreateObject());
+            }
             cJSON_AddItemToArray(content, b);
         }
     }
@@ -867,10 +902,11 @@ static cJSON *convert_openai_response_to_anthropic(const char *body, const char 
 static void stream_send_chunk(gateway_job_t *job, const char *data) {
     if (!job || !job->client_req || !data) return;
     if (job->stream_state.ended || job->response_sent) return;
-    struct evbuffer *b = evbuffer_new();
-    evbuffer_add(b, data, strlen(data));
-    evhttp_send_reply_chunk(job->client_req, b);
-    evbuffer_free(b);
+    pthread_mutex_lock(&job->send_mu);
+    if (!job->send_buf) job->send_buf = evbuffer_new();
+    evbuffer_add(job->send_buf, data, strlen(data));
+    pthread_mutex_unlock(&job->send_mu);
+    event_base_once(BASE, -1, EV_TIMEOUT, deferred_send, job, NULL);
 }
 
 static void stream_emit_json(gateway_job_t *job, const char *event, cJSON *obj) {
@@ -883,6 +919,7 @@ static void stream_emit_json(gateway_job_t *job, const char *event, cJSON *obj) 
     membuf_append(&b, "data: ", 6);
     membuf_append(&b, txt, strlen(txt));
     membuf_append(&b, "\n\n", 2);
+    log_msg("DEBUG", "SSE_EMIT model=%s event=%s data=%s", job->client_model, event, txt);
     stream_send_chunk(job, b.ptr);
     membuf_free(&b);
     free(txt);
@@ -891,12 +928,10 @@ static void stream_emit_json(gateway_job_t *job, const char *event, cJSON *obj) 
 static void stream_start_reply(gateway_job_t *job) {
     stream_state_t *s = &job->stream_state;
     if (s->reply_started) return;
-    struct evkeyvalq *h = evhttp_request_get_output_headers(job->client_req);
-    evhttp_add_header(h, "Content-Type", "text/event-stream; charset=utf-8");
-    evhttp_add_header(h, "Cache-Control", "no-cache, no-transform");
-    evhttp_add_header(h, "Connection", "keep-alive");
-    evhttp_add_header(h, "X-Accel-Buffering", "no");
-    evhttp_send_reply_start(job->client_req, 200, "OK");
+    pthread_mutex_lock(&job->send_mu);
+    job->send_start = true;
+    pthread_mutex_unlock(&job->send_mu);
+    event_base_once(BASE, -1, EV_TIMEOUT, deferred_send, job, NULL);
     s->reply_started = true;
 }
 
@@ -977,6 +1012,8 @@ static void stream_tool_start_if_needed(gateway_job_t *job, tool_stream_state_t 
     if (!ts) return;
     if (!ts->id) ts->id = make_id("toolu");
     if (!ts->name) ts->name = xstrdup("tool");
+    if (ts->start_emitted) return;
+    ts->start_emitted = true;
     cJSON *data = cJSON_CreateObject();
     cJSON_AddStringToObject(data, "type", "content_block_start");
     cJSON_AddNumberToObject(data, "index", ts->block_index);
@@ -1052,7 +1089,10 @@ static void stream_finish(gateway_job_t *job) {
     cJSON_AddStringToObject(stop, "type", "message_stop");
     stream_emit_json(job, "message_stop", stop);
     cJSON_Delete(stop);
-    evhttp_send_reply_end(job->client_req);
+    pthread_mutex_lock(&job->send_mu);
+    job->send_end = true;
+    pthread_mutex_unlock(&job->send_mu);
+    event_base_once(BASE, -1, EV_TIMEOUT, deferred_send, job, NULL);
     job->response_sent = true;
     s->ended = true;
 }
@@ -1102,8 +1142,16 @@ static void handle_openai_stream_json(gateway_job_t *job, const char *json) {
                 const char *name = fn ? json_get_str(fn, "name") : NULL;
                 if (name && !ts->name) ts->name = xstrdup(name);
                 stream_tool_start_if_needed(job, ts);
-                const char *args = fn ? json_get_str(fn, "arguments") : NULL;
-                if (args) stream_tool_json_delta(job, ts, args);
+                cJSON *args_obj = fn ? cJSON_GetObjectItemCaseSensitive(fn, "arguments") : NULL;
+                if (cJSON_IsString(args_obj) && args_obj->valuestring && args_obj->valuestring[0]) {
+                    stream_tool_json_delta(job, ts, args_obj->valuestring);
+                } else if (cJSON_IsObject(args_obj)) {
+                    char *args_str = cJSON_PrintUnformatted(args_obj);
+                    if (args_str) {
+                        stream_tool_json_delta(job, ts, args_str);
+                        free(args_str);
+                    }
+                }
             }
         }
     }
@@ -1162,14 +1210,19 @@ static size_t curl_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata
     } else {
         membuf_append(&job->upstream_body, ptr, n);
     }
+    log_msg("DEBUG", "UP_RESP chunk model=%s len=%zu", job->client_model, n);
     return n;
 }
 
 static size_t curl_header_cb(char *buffer, size_t size, size_t nitems, void *userdata) {
     gateway_job_t *job = (gateway_job_t *)userdata;
     size_t n = size * nitems;
-    (void)buffer;
     job->upstream_headers_done = true;
+    // trim trailing \r\n for logging
+    size_t hn = n;
+    while (hn > 0 && (buffer[hn-1] == '\r' || buffer[hn-1] == '\n')) hn--;
+    if (hn > 0 && hn < 512)
+        log_msg("DEBUG", "UP_HDR model=%s %.*s", job->client_model, (int)hn, buffer);
     return n;
 }
 
@@ -1179,7 +1232,65 @@ static void deferred_req_free(evutil_socket_t fd, short what, void *arg) {
     if (req) evhttp_request_free(req);
 }
 
+static void deferred_send(evutil_socket_t fd, short what, void *arg) {
+    (void)fd; (void)what;
+    gateway_job_t *job = arg;
+    if (!job || !job->client_req) return;
+    pthread_mutex_lock(&job->send_mu);
+    struct evbuffer *buf = job->send_buf;
+    job->send_buf = NULL;
+    bool do_start = job->send_start;
+    job->send_start = false;
+    bool do_end = job->send_end;
+    job->send_end = false;
+    char *json = job->nonstream_json;
+    job->nonstream_json = NULL;
+    int code = job->nonstream_code;
+    pthread_mutex_unlock(&job->send_mu);
+    if (do_start) {
+        struct evkeyvalq *h = evhttp_request_get_output_headers(job->client_req);
+        evhttp_add_header(h, "Content-Type", "text/event-stream; charset=utf-8");
+        evhttp_add_header(h, "Cache-Control", "no-cache, no-transform");
+        evhttp_add_header(h, "Connection", "keep-alive");
+        evhttp_add_header(h, "X-Accel-Buffering", "no");
+        evhttp_send_reply_start(job->client_req, 200, "OK");
+    }
+    if (buf && evbuffer_get_length(buf) > 0) {
+        size_t bl = evbuffer_get_length(buf);
+        char *preview = (char *)calloc(1, bl + 1);
+        if (preview) {
+            evbuffer_copyout(buf, preview, bl);
+            size_t pl = bl > 4096 ? 4096 : bl;
+            log_msg("DEBUG", "SSE_SEND model=%s len=%zu %.*s", job->client_model, bl, (int)pl, preview);
+            free(preview);
+        }
+        evhttp_send_reply_chunk(job->client_req, buf);
+    }
+    if (buf) evbuffer_free(buf);
+    if (do_end) {
+        log_msg("DEBUG", "SSE_END model=%s", job->client_model);
+        evhttp_send_reply_end(job->client_req);
+        job->response_sent = true;
+    }
+    if (json) {
+        size_t jl = strlen(json);
+        size_t pl = jl > 4096 ? 4096 : jl;
+        log_msg("DEBUG", "RESP_SEND model=%s code=%d %.*s", job->client_model, code, (int)pl, json);
+        struct evbuffer *out = evbuffer_new();
+        evbuffer_add(out, json, strlen(json));
+        evhttp_add_header(evhttp_request_get_output_headers(job->client_req), "Content-Type", "application/json; charset=utf-8");
+        evhttp_send_reply(job->client_req, code, code == 200 ? "OK" : "Error", out);
+        evbuffer_free(out);
+        free(json);
+        job->response_sent = true;
+    }
+}
 
+static void deferred_job_free(evutil_socket_t fd, short what, void *arg) {
+    (void)fd; (void)what;
+    gateway_job_t *job = arg;
+    job_free(job);
+}
 
 static void job_free(gateway_job_t *job) {
     if (!job) return;
@@ -1203,46 +1314,78 @@ static void job_free(gateway_job_t *job) {
         job->client_req = NULL;
     }
     job->client_req = NULL;
+    pthread_mutex_destroy(&job->send_mu);
+    if (job->send_buf) { evbuffer_free(job->send_buf); job->send_buf = NULL; }
+    free(job->nonstream_json); job->nonstream_json = NULL;
     free(job);
 }
 
 static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
+    char *json_out = NULL;
+    int code_out = 200;
     if (rc != CURLE_OK) {
         log_msg("ERROR", "UPSTREAM_FAIL model=%s url=%s curl_error=%s", job->client_model, job->upstream_url, curl_easy_strerror(rc));
-        send_error_json(job->client_req, 502, "upstream_error", curl_easy_strerror(rc));
-        job->response_sent = true;
-        return;
-    }
-    curl_easy_getinfo(job->easy, CURLINFO_RESPONSE_CODE, &job->upstream_status);
-    log_msg("INFO", "UPS_RESP model=%s upstream_status=%ld response_len=%zu",
-        job->client_model, job->upstream_status, job->upstream_body.len);
-    if (job->upstream_status < 200 || job->upstream_status >= 300) {
-        char *body_preview = job->upstream_body.ptr ? job->upstream_body.ptr : "";
-        size_t preview_len = strlen(body_preview);
-        if (preview_len > 500) preview_len = 500;
-        log_msg("ERROR", "UPSTREAM_HTTP_ERR model=%s status=%ld body=%.*s", job->client_model, job->upstream_status, (int)preview_len, body_preview);
-        cJSON *e = cJSON_CreateObject();
-        cJSON_AddStringToObject(e, "type", "error");
+        if (job->upstream_body.ptr && job->upstream_body.len > 0) {
+            size_t pl = job->upstream_body.len > 4096 ? 4096 : job->upstream_body.len;
+            log_msg("DEBUG", "UP_BODY_FAIL model=%s %.*s", job->client_model, (int)pl, job->upstream_body.ptr);
+        }
+        cJSON *j = cJSON_CreateObject();
         cJSON *err = cJSON_CreateObject();
         cJSON_AddStringToObject(err, "type", "upstream_error");
-        cJSON_AddNumberToObject(err, "status", job->upstream_status);
-        cJSON_AddStringToObject(err, "message", job->upstream_body.ptr ? job->upstream_body.ptr : "upstream HTTP error");
-        cJSON_AddItemToObject(e, "error", err);
-        send_json(job->client_req, 502, e);
-        cJSON_Delete(e);
-        job->response_sent = true;
-        return;
+        cJSON_AddStringToObject(err, "message", curl_easy_strerror(rc));
+        cJSON_AddItemToObject(j, "error", err);
+        json_out = cJSON_PrintUnformatted(j);
+        cJSON_Delete(j);
+        code_out = 502;
+    } else {
+        curl_easy_getinfo(job->easy, CURLINFO_RESPONSE_CODE, &job->upstream_status);
+        log_msg("INFO", "UPS_RESP model=%s upstream_status=%ld response_len=%zu",
+            job->client_model, job->upstream_status, job->upstream_body.len);
+        if (job->upstream_status < 200 || job->upstream_status >= 300) {
+            char *body_preview = job->upstream_body.ptr ? job->upstream_body.ptr : "";
+            size_t preview_len = strlen(body_preview);
+            if (preview_len > 500) preview_len = 500;
+            log_msg("ERROR", "UPSTREAM_HTTP_ERR model=%s status=%ld body=%.*s", job->client_model, job->upstream_status, (int)preview_len, body_preview);
+            cJSON *e = cJSON_CreateObject();
+            cJSON_AddStringToObject(e, "type", "error");
+            cJSON *err = cJSON_CreateObject();
+            cJSON_AddStringToObject(err, "type", "upstream_error");
+            cJSON_AddNumberToObject(err, "status", job->upstream_status);
+            cJSON_AddStringToObject(err, "message", job->upstream_body.ptr ? job->upstream_body.ptr : "upstream HTTP error");
+            cJSON_AddItemToObject(e, "error", err);
+            json_out = cJSON_PrintUnformatted(e);
+            cJSON_Delete(e);
+            code_out = 502;
+        } else {
+            cJSON *anth = convert_openai_response_to_anthropic(job->upstream_body.ptr, job->client_model);
+            if (!anth) {
+                log_msg("ERROR", "CONV_FAIL model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
+                cJSON *j = cJSON_CreateObject();
+                cJSON *err = cJSON_CreateObject();
+                cJSON_AddStringToObject(err, "type", "conversion_error");
+                cJSON_AddStringToObject(err, "message", "failed to convert upstream response");
+                cJSON_AddItemToObject(j, "error", err);
+                json_out = cJSON_PrintUnformatted(j);
+                cJSON_Delete(j);
+                code_out = 502;
+            } else {
+                log_msg("INFO", "RESP_OK model=%s", job->client_model);
+                json_out = cJSON_PrintUnformatted(anth);
+                cJSON_Delete(anth);
+                code_out = 200;
+            }
+        }
     }
-    cJSON *anth = convert_openai_response_to_anthropic(job->upstream_body.ptr, job->client_model);
-    if (!anth) {
-        log_msg("ERROR", "CONV_FAIL model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
-        send_error_json(job->client_req, 502, "conversion_error", "failed to convert upstream response");
-        job->response_sent = true;
-        return;
+    if (json_out) {
+        size_t jl = strlen(json_out);
+        if (jl > 4096) jl = 4096;
+        log_msg("DEBUG", "RESP model=%s code=%d %.*s", job->client_model, code_out, (int)jl, json_out);
     }
-    log_msg("INFO", "RESP_OK model=%s", job->client_model);
-    send_json(job->client_req, 200, anth);
-    cJSON_Delete(anth);
+    pthread_mutex_lock(&job->send_mu);
+    job->nonstream_code = code_out;
+    job->nonstream_json = json_out;
+    pthread_mutex_unlock(&job->send_mu);
+    event_base_once(BASE, -1, EV_TIMEOUT, deferred_send, job, NULL);
     job->response_sent = true;
 }
 
@@ -1335,7 +1478,7 @@ static void *worker_loop(void *arg) {
                 if (job) {
                     if (job->stream) complete_stream_job(job, msg->data.result);
                     else complete_nonstream_job(job, msg->data.result);
-                    job_free(job);
+                    event_base_once(BASE, -1, EV_TIMEOUT, deferred_job_free, job, NULL);
                 }
             }
         }
@@ -1406,9 +1549,15 @@ static void handle_messages(struct evhttp_request *req) {
     char *url = make_upstream_url(model);
 
     log_msg("INFO", "RECV model=%s body_len=%zu stream=%d", client_model, body ? strlen(body) : 0, stream ? 1 : 0);
+    if (body) {
+        size_t bl = strlen(body);
+        if (bl > 4096) bl = 4096;
+        log_msg("DEBUG", "REQ_BODY %.*s", (int)bl, body);
+    }
 
     gateway_job_t *job = (gateway_job_t *)calloc(1, sizeof(*job));
     membuf_init(&job->upstream_body);
+    pthread_mutex_init(&job->send_mu, NULL);
     job->client_req = req;
     job->request_body = oai_body;
     job->upstream_url = url;
@@ -1423,6 +1572,11 @@ static void handle_messages(struct evhttp_request *req) {
 
     log_msg("INFO", "SEND model=%s upstream_model=%s provider=%s stream=%d url=%s oai_body_len=%zu",
         job->client_model, job->upstream_model, job->provider_name, stream ? 1 : 0, job->upstream_url, oai_body ? strlen(oai_body) : 0);
+    if (oai_body) {
+        size_t ol = strlen(oai_body);
+        if (ol > 4096) ol = 4096;
+        log_msg("DEBUG", "UP_REQ %.*s", (int)ol, oai_body);
+    }
     cJSON_Delete(model);
     cJSON_Delete(oai);
     cJSON_Delete(anth);
@@ -1576,6 +1730,7 @@ int main(int argc, char **argv) {
     if (evthread_use_pthreads() != 0) { fprintf(stderr, "evthread_use_pthreads failed\n"); return 1; }
     curl_global_init(CURL_GLOBAL_DEFAULT);
     config_load(config_path);
+    log_open("gateway.log");
     workers_start();
 
     char *host = config_get_string_copy("listen_host");
@@ -1612,5 +1767,6 @@ int main(int argc, char **argv) {
     pthread_rwlock_unlock(&G.lock);
     pthread_rwlock_destroy(&G.lock);
     curl_global_cleanup();
+    log_open(NULL);
     return 0;
 }
