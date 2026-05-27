@@ -1,3 +1,17 @@
+/**
+ * @file handlers.c
+ * @brief HTTP 路由处理实现（含登录认证）
+ *
+ * 本文件实现了网关的所有 HTTP 请求处理逻辑。
+ * 核心设计：
+ *   - 所有请求先经过 handle_root 进行 URI 和方法路由；
+ *   - 需要认证的接口统一调用 gateway_auth_ok，支持 x-api-key 头或
+ *     Authorization: Bearer 令牌，并与配置文件中的 gateway_api_key 比对；
+ *   - /v1/messages 接收 Anthropic 格式请求，转换为 OpenAI 格式后通过
+ *     enqueue_job 投递到工作线程池异步处理；
+ *   - 管理接口（/admin/api/ *）提供运行时配置查看与热更新能力。
+ */
+
 #include "handlers.h"
 #include "config.h"
 #include "convert.h"
@@ -11,10 +25,28 @@
 #include <time.h>
 #include <unistd.h>
 
+/**
+ * @brief 从 HTTP 请求头中查找指定名称的字段值
+ * @param req  libevent HTTP 请求对象
+ * @param name 头部名称（大小写不敏感）
+ * @return 头部值的指针，若不存在则返回 NULL
+ */
 static const char *header_get(struct evhttp_request *req, const char *name) {
     return evhttp_find_header(evhttp_request_get_input_headers(req), name);
 }
 
+/**
+ * @brief 常量时间字符串比较，防止时序攻击
+ * @param a 字符串 a
+ * @param b 字符串 b
+ * @return 两字符串完全相等返回 true，否则 false
+ *
+ * 无论字符串内容如何，执行时间都只与长度有关：
+ *   1. 先比较长度；若不同直接返回 false；
+ *   2. 逐字节按位异或累加到 diff；
+ *   3. 最后检查 diff 是否为 0。
+ * 这样避免了通过测量比较时间来猜测密钥前缀。
+ */
 static bool constant_time_eq(const char *a, const char *b) {
     if (!a || !b) return false;
     size_t la = strlen(a), lb = strlen(b);
@@ -89,6 +121,17 @@ static bool admin_auth_ok(struct evhttp_request *req) {
     return session_valid(token);
 }
 
+/**
+ * @brief 通用认证检查
+ * @param req      当前 HTTP 请求
+ * @param required 期望的密钥（若为空字符串则直接放行）
+ * @return 认证通过返回 true
+ *
+ * 支持两种认证方式：
+ *   1. X-Api-Key 头部直接比对；
+ *   2. Authorization: Bearer <token> 中的 token 比对。
+ * 两者均使用 constant_time_eq 防止时序侧信道。
+ */
 static bool auth_ok(struct evhttp_request *req, const char *required) {
     if (!required || !*required) return true;
     const char *x = header_get(req, "x-api-key");
@@ -98,6 +141,15 @@ static bool auth_ok(struct evhttp_request *req, const char *required) {
     return false;
 }
 
+/**
+ * @brief 网关级认证检查
+ * @param req 当前 HTTP 请求
+ * @return 认证通过返回 true
+ *
+ * 从配置中读取 gateway_api_key，调用 auth_ok 进行比对。
+ * 若认证失败，记录 WARN 日志，包含客户端提供的 authorization 和 x-api-key
+ * （注意：生产环境中应谨慎记录完整密钥，此处仅用于调试）。
+ */
 static bool gateway_auth_ok(struct evhttp_request *req) {
     char *k = config_get_string_copy("gateway_api_key");
     bool ok = auth_ok(req, k);
@@ -109,7 +161,17 @@ static bool gateway_auth_ok(struct evhttp_request *req) {
     }
     free(k);
     return ok;
-}static char *read_request_body(struct evhttp_request *req, size_t max_bytes) {
+}
+
+/**
+ * @brief 读取 HTTP 请求体到以 \0 结尾的 C 字符串
+ * @param req      libevent HTTP 请求对象
+ * @param max_bytes 最大允许长度（超过则返回 NULL）
+ * @return 动态分配的字符串指针，调用者负责 free；出错返回 NULL
+ *
+ * 使用 calloc 分配 len+1 字节，确保末尾有 \0，方便后续字符串处理。
+ */
+static char *read_request_body(struct evhttp_request *req, size_t max_bytes) {
     struct evbuffer *in = evhttp_request_get_input_buffer(req);
     size_t len = evbuffer_get_length(in);
     if (len > max_bytes) return NULL;
@@ -120,6 +182,15 @@ static bool gateway_auth_ok(struct evhttp_request *req) {
     return body;
 }
 
+/**
+ * @brief 发送 JSON 响应
+ * @param req  HTTP 请求对象
+ * @param code HTTP 状态码
+ * @param obj  cJSON 对象（会被格式化为紧凑 JSON）
+ *
+ * 自动设置 Content-Type: application/json; charset=utf-8，
+ * 状态短语为 "OK"（200）或 "Error"（非 200）。
+ */
 static void send_json(struct evhttp_request *req, int code, cJSON *obj) {
     char *txt = cJSON_PrintUnformatted(obj);
     struct evbuffer *out = evbuffer_new();
@@ -130,6 +201,13 @@ static void send_json(struct evhttp_request *req, int code, cJSON *obj) {
     free(txt);
 }
 
+/**
+ * @brief 发送纯文本响应
+ * @param req  HTTP 请求对象
+ * @param code HTTP 状态码
+ * @param ct   Content-Type（NULL 则默认 text/plain; charset=utf-8）
+ * @param body 响应正文（NULL 则发送空字符串）
+ */
 static void send_text(struct evhttp_request *req, int code, const char *ct, const char *body) {
     struct evbuffer *out = evbuffer_new();
     evbuffer_add_printf(out, "%s", body ? body : "");
@@ -138,6 +216,15 @@ static void send_text(struct evhttp_request *req, int code, const char *ct, cons
     evbuffer_free(out);
 }
 
+/**
+ * @brief 发送标准错误 JSON 响应
+ * @param req  HTTP 请求对象
+ * @param code HTTP 状态码
+ * @param type 错误类型字符串（如 authentication_error）
+ * @param msg  人类可读的错误信息
+ *
+ * 构造 { "error": { "type": ..., "message": ... } } 结构并发送。
+ */
 static void send_error_json(struct evhttp_request *req, int code, const char *type, const char *msg) {
     cJSON *j = cJSON_CreateObject();
     cJSON *err = cJSON_CreateObject();
@@ -148,6 +235,14 @@ static void send_error_json(struct evhttp_request *req, int code, const char *ty
     cJSON_Delete(j);
 }
 
+/**
+ * @brief 从 JSON 对象估算 token 数量
+ * @param root cJSON 对象
+ * @return 估算的 token 数（至少为 1）
+ *
+ * 本实现采用极度简化的启发式规则：将 JSON 序列化后的字符串长度除以 4 再加 1。
+ * 这不是真正的 tokenizer，仅用于 /v1/messages/count_tokens 的本地快速估算。
+ */
 static long estimate_tokens_from_json(cJSON *root) {
     char *txt = cJSON_PrintUnformatted(root);
     long n = txt ? (long)strlen(txt) : 0;
@@ -156,6 +251,12 @@ static long estimate_tokens_from_json(cJSON *root) {
     return tok < 1 ? 1 : tok;
 }
 
+/**
+ * @brief 健康检查接口
+ * @param req HTTP 请求对象
+ *
+ * 返回 { "status": "ok" }，用于 Kubernetes / Docker / 负载均衡器的存活探测。
+ */
 static void handle_health(struct evhttp_request *req) {
     cJSON *j = cJSON_CreateObject();
     cJSON_AddStringToObject(j, "status", "ok");
@@ -163,6 +264,27 @@ static void handle_health(struct evhttp_request *req) {
     cJSON_Delete(j);
 }
 
+/**
+ * @brief 核心消息处理接口（/v1/messages）
+ * @param req HTTP 请求对象
+ *
+ * 这是网关最重要的接口，负责接收 Anthropic Messages API 请求，
+ * 转换为 OpenAI Chat Completions 格式，并投递到 worker 线程池。
+ *
+ * 处理流程：
+ *   1. 方法校验：仅接受 POST；
+ *   2. 网关认证：调用 gateway_auth_ok；
+ *   3. 读取并解析请求体（最大 MAX_BODY_BYTES = 64MB）；
+ *   4. 提取 model 字段，通过 config_select_model_copy 选择目标上游模型；
+ *   5. 调用 build_openai_request 将 Anthropic JSON 转换为 OpenAI JSON；
+ *   6. 提取 stream、api_key、provider、upstream_model 等元数据；
+ *   7. 构造 gateway_job_t，填充所有字段，初始化 upstream_body 缓冲区和 send_mu；
+ *   8. evhttp_request_own(req) 接管请求所有权，防止 libevent 在当前函数返回时自动释放；
+ *   9. enqueue_job(job) 将任务投递到工作线程池；
+ *  10. 记录请求日志与实时打印（rt_print）。
+ *
+ * 此后 worker 线程负责上游网络 I/O，主线程继续处理其他 HTTP 请求。
+ */
 static void handle_messages(struct evhttp_request *req) {
     if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) {
         log_msg("WARN", "messages non-POST method");
@@ -245,6 +367,14 @@ static void handle_messages(struct evhttp_request *req) {
     free(body);
 }
 
+/**
+ * @brief 模型列表接口（/v1/models）
+ * @param req HTTP 请求对象
+ *
+ * 读取配置中所有 enabled=true 的模型，构造 Anthropic 格式的模型列表响应：
+ *   { "object": "list", "data": [ { "id": ..., "type": "model", "object": "model", ... } ] }
+ * 如果模型配置了 display_name 或 provider，也会一并返回。
+ */
 static void handle_models(struct evhttp_request *req) {
     if (!gateway_auth_ok(req)) { log_msg("WARN", "models auth failed"); send_error_json(req, 401, "authentication_error", "invalid gateway api key"); return; }
     cJSON *out = cJSON_CreateObject();
@@ -277,6 +407,14 @@ static void handle_models(struct evhttp_request *req) {
     cJSON_Delete(out);
 }
 
+/**
+ * @brief Token 计数接口（/v1/messages/count_tokens）
+ * @param req HTTP 请求对象
+ *
+ * 本地快速估算输入 token 数，不调用上游服务。
+ * 实现原理见 estimate_tokens_from_json：将请求 JSON 序列化后按长度除以 4 估算。
+ * 仅支持 POST 方法，需要网关认证。
+ */
 static void handle_count_tokens(struct evhttp_request *req) {
     if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) { send_error_json(req, 405, "method_not_allowed", "POST required"); return; }
     if (!gateway_auth_ok(req)) { log_msg("WARN", "count_tokens auth failed"); send_error_json(req, 401, "authentication_error", "invalid gateway api key"); return; }
@@ -329,6 +467,12 @@ static void handle_admin_logout(struct evhttp_request *req) {
     cJSON_Delete(ok);
 }
 
+/**
+ * @brief 获取当前配置（/admin/api/config GET）
+ * @param req HTTP 请求对象
+ *
+ * 返回 config_masked_json() 的结果，其中 api_key 等敏感字段已被掩码为 ***MASKED***。
+ */
 static void handle_config_get(struct evhttp_request *req) {
     if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
     char *txt = config_masked_json();
@@ -336,6 +480,13 @@ static void handle_config_get(struct evhttp_request *req) {
     free(txt);
 }
 
+/**
+ * @brief 热更新配置（/admin/api/config PUT/POST）
+ * @param req HTTP 请求对象
+ *
+ * 读取请求体作为完整配置 JSON，调用 config_replace_from_json 替换内存中的配置。
+ * 若解析失败，返回 400 及错误详情；成功返回 { "ok": true }。
+ */
 static void handle_config_put(struct evhttp_request *req) {
     if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
     char *body = read_request_body(req, MAX_BODY_BYTES);
@@ -350,6 +501,13 @@ static void handle_config_put(struct evhttp_request *req) {
     cJSON_Delete(ok);
 }
 
+/**
+ * @brief 切换默认活跃模型（/admin/api/switch）
+ * @param req HTTP 请求对象
+ *
+ * 从 JSON 体中提取 active_model，调用 config_set_active_model 修改配置。
+ * 用于在运行时快速切换默认使用的上游模型，无需重启进程。
+ */
 static void handle_switch(struct evhttp_request *req) {
     if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
     char *body = read_request_body(req, MAX_BODY_BYTES);
@@ -362,6 +520,12 @@ static void handle_switch(struct evhttp_request *req) {
     free(err); cJSON_Delete(j); free(body);
 }
 
+/**
+ * @brief 修改管理员密码（/admin/api/change-password POST）
+ * @param req HTTP 请求对象
+ *
+ * 验证旧密码后更新 admin_password 和 admin_token 配置并持久化。
+ */
 static void handle_change_password(struct evhttp_request *req) {
     if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
     if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) { send_error_json(req, 405, "method_not_allowed", "POST required"); return; }
@@ -385,13 +549,20 @@ static void handle_change_password(struct evhttp_request *req) {
     int rc = config_set_string("admin_password", new_pw, &err);
     if (rc != 0) { send_error_json(req, 400, "configuration_error", err ? err : "failed"); free(err); }
     else {
-        /* Also update admin_token to match for backwards compat */
         config_set_string("admin_token", new_pw, NULL);
         cJSON *out = cJSON_CreateObject(); cJSON_AddBoolToObject(out, "ok", true); send_json(req, 200, out); cJSON_Delete(out);
     }
     cJSON_Delete(j); free(body);
 }
 
+/**
+ * @brief 返回管理后台 HTML 页面
+ * @param req HTTP 请求对象
+ *
+ * 从 ./web/admin.html 读取单文件 HTML/JS 管理界面。
+ * 若文件不存在，返回简单的占位提示。
+ * 输出头包含强缓存禁用指令（Cache-Control: no-cache 等）。
+ */
 static void handle_admin_html(struct evhttp_request *req) {
     size_t n = 0;
     char *html = NULL;
@@ -419,6 +590,29 @@ static void handle_admin_html(struct evhttp_request *req) {
     free(html);
 }
 
+/**
+ * @brief 顶层 HTTP 请求回调与路由分发
+ * @param req libevent HTTP 请求对象
+ * @param arg 用户参数（当前未使用）
+ *
+ * 所有到达本网关的 HTTP 请求都会先进入此函数。
+ * 处理步骤：
+ *   1. 记录请求方法和 URI；
+ *   2. 截断查询字符串（? 之后的内容不参与路由）；
+ *   3. 使用 URI_IS 宏进行前缀精确匹配，分发到对应处理函数；
+ *   4. 未匹配的 URI 返回 404 JSON 错误。
+ *
+ * 路由表：
+ *   - /                              -> handle_admin_html (管理后台)
+ *   - /admin、/admin/                -> handle_admin_html
+ *   - /healthz、/readyz              -> handle_health
+ *   - /v1/messages                   -> handle_messages
+ *   - /v1/messages/count_tokens      -> handle_count_tokens
+ *   - /v1/models、/v1/models/        -> handle_models
+ *   - /admin/api/config (GET)        -> handle_config_get
+ *   - /admin/api/config (PUT/POST)   -> handle_config_put
+ *   - /admin/api/switch              -> handle_switch
+ */
 void handle_root(struct evhttp_request *req, void *arg) {
     (void)arg;
     const char *uri = evhttp_request_get_uri(req);

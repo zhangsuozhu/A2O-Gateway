@@ -1,3 +1,22 @@
+/**
+ * @file worker.c
+ * @brief libcurl multi 工作线程池实现
+ *
+ * 每个 worker 线程维护一个独立的 CURLM *multi handle，
+ * 通过 curl_multi_perform + curl_multi_poll 驱动异步 I/O。
+ * 任务以 gateway_job_t 链表形式挂到 worker 的 pending 队列。
+ * worker_loop 不断：
+ *   1. 从 pending 队列取出新任务，用 curl_easy_init 创建 handle 并配置；
+ *   2. 调用 curl_multi_perform 推进所有活跃传输；
+ *   3. 用 curl_multi_poll 等待网络事件；
+ *   4. 通过 curl_multi_info_read 读取已完成的传输结果，
+ *      根据 stream / non-stream 分别调用 complete_stream_job 或 complete_nonstream_job；
+ *   5. 将任务通过 event_base_once 投递回 libevent 主线程进行释放或发送响应。
+ *
+ * 这样 libevent HTTP 线程只负责接收请求和发送响应，
+ * 所有上游网络阻塞操作都由 worker 线程承担，避免阻塞主事件循环。
+ */
+
 #include "worker.h"
 #include "stream.h"
 #include "convert.h"
@@ -9,18 +28,59 @@
 #include <string.h>
 #include <stdlib.h>
 
+/**
+ * @brief 延迟释放 evhttp_request 的回调函数
+ * @param fd   libevent 套接字（未使用）
+ * @param what 事件标志（未使用）
+ * @param arg  指向 struct evhttp_request 的指针
+ *
+ * evhttp_request 属于 libevent 对象，必须在 libevent 主线程释放。
+ * 因此 worker 线程通过 event_base_once 将该函数投递到 BASE 事件循环，
+ * 在主线程中安全调用 evhttp_request_free。
+ */
 static void deferred_req_free(evutil_socket_t fd, short what, void *arg) {
     (void)fd; (void)what;
     struct evhttp_request *req = (struct evhttp_request *)arg;
     if (req) evhttp_request_free(req);
 }
 
+/**
+ * @brief 延迟释放 gateway_job_t 的回调函数
+ * @param fd   libevent 套接字（未使用）
+ * @param what 事件标志（未使用）
+ * @param arg  指向 gateway_job_t 的指针
+ *
+ * job_free 内部会释放 client_req、send_buf 等 libevent 相关对象，
+ * 这些操作必须在 libevent 主线程完成。
+ * 因此 worker 线程通过 event_base_once 将本回调投递到 BASE，
+ * 由主线程执行实际的资源释放。
+ */
 static void deferred_job_free(evutil_socket_t fd, short what, void *arg) {
     (void)fd; (void)what;
     gateway_job_t *job = arg;
     job_free(job);
 }
 
+/**
+ * @brief 处理非流式请求完成后的结果转换与响应
+ * @param job 指向当前 gateway_job_t 任务
+ * @param rc  libcurl 传输结果码（CURLE_OK 表示成功）
+ *
+ * 该函数在 worker 线程中执行，负责将上游 OpenAI 格式的 HTTP 响应
+ * 转换为 Anthropic Messages API 格式，并把结果写回 job->nonstream_json。
+ * 处理流程：
+ *   1. 若 rc != CURLE_OK，表示网络层失败，构造 502 upstream_error；
+ *   2. 若 rc == CURLE_OK 但 HTTP status 不在 [200,300)，同样返回 502，
+ *      并将上游错误 body 透传；
+ *   3. 若 HTTP 成功，调用 convert_openai_response_to_anthropic 做协议转换，
+ *      提取 usage 中的 input_tokens / output_tokens；
+ *   4. 转换成功后，通过 event_base_once 将 deferred_send 投递到 BASE，
+ *      由 libevent 主线程把 nonstream_json 发送回客户端；
+ *   5. 调用 rt_print / rt_print_json 输出实时日志。
+ *
+ * 注意：本函数直接操作 job->nonstream_json / nonstream_code，
+ *       并通过 send_mu 互斥锁保护写入；最终发送动作发生在主线程。
+ */
 static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     char *json_out = NULL;
     int code_out = 200;
@@ -102,6 +162,20 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     }
 }
 
+/**
+ * @brief 处理流式请求完成后的收尾工作
+ * @param job 指向当前 gateway_job_t 任务
+ * @param rc  libcurl 传输结果码
+ *
+ * 流式请求在传输过程中已通过 curl_write_cb 实时解析 SSE 并推送给客户端，
+ * 因此本函数仅负责最终的状态确认与错误兜底：
+ *   1. 若 stream_state.ended 已为 true，说明之前已正常结束，直接返回；
+ *   2. 若 rc != CURLE_OK，记录错误并通过 stream_emit_error 向客户端发送
+ *      SSE error 事件；
+ *   3. 若上游返回 HTTP >= 400，同样发送 SSE error 事件；
+ *   4. 若一切正常，记录 STRM_OK 日志；
+ *   5. 最后调用 stream_finish 发送最终 SSE 结束标志（如 message_stop 等）。
+ */
 static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
     if (job->stream_state.ended) {
         log_msg("INFO", "STRM_END model=%s already ended", job->client_model);
@@ -122,6 +196,25 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
     stream_finish(job);
 }
 
+/**
+ * @brief 为单个任务创建并配置 CURL easy handle，然后加入 multi handle
+ * @param w   当前 worker 线程的上下文
+ * @param job 待执行的任务
+ *
+ * 配置项说明：
+ *   - CURLOPT_URL: 上游 LLM 服务的完整 URL；
+ *   - CURLOPT_POST / POSTFIELDS: 发送 OpenAI 格式的 JSON 请求体；
+ *   - CURLOPT_WRITEFUNCTION / WRITEDATA: 将响应体写入 job->upstream_body；
+ *   - CURLOPT_HEADERFUNCTION / HEADERDATA: 解析上游响应头；
+ *   - CURLOPT_PRIVATE: 将 job 指针绑定到 easy handle，便于完成后找回；
+ *   - CURLOPT_NOSIGNAL: 避免在多线程环境下触发 SIGALRM；
+ *   - CURLOPT_TCP_KEEPALIVE: 保持 TCP 连接复用；
+ *   - CURLOPT_CONNECTTIMEOUT_MS: 连接超时 15 秒；
+ *   - CURLOPT_TIMEOUT_MS: 非流式请求 600 秒超时，流式请求不设超时；
+ *   - CURLOPT_HTTP_VERSION: 优先使用 HTTP/2（TLS 上）；
+ *   - CURLOPT_SSL_VERIFYPEER / VERIFYHOST: 强制校验服务器证书；
+ *   - HTTPHEADER: 包含 Content-Type、Accept 以及 Authorization Bearer token。
+ */
 static void worker_add_easy(worker_t *w, gateway_job_t *job) {
     job->easy = curl_easy_init();
     curl_easy_setopt(job->easy, CURLOPT_URL, job->upstream_url);
@@ -153,6 +246,25 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
     curl_multi_add_handle(w->multi, job->easy);
 }
 
+/**
+ * @brief 单个 worker 线程的主循环
+ * @param arg 指向 worker_t 的指针
+ * @return 始终返回 NULL
+ *
+ * 线程启动后初始化 CURLM multi handle，并设置连接复用与并发上限：
+ *   - CURLMOPT_PIPELINING: 启用 HTTP/2 多路复用；
+ *   - CURLMOPT_MAX_HOST_CONNECTIONS: 单主机最大 64 条连接；
+ *   - CURLMOPT_MAX_TOTAL_CONNECTIONS: 全局最大 256 条连接。
+ *
+ * 循环体逻辑：
+ *   1. 加锁后若 pending 队列为空且没有活跃传输，则 pthread_cond_wait 休眠；
+ *   2. 被唤醒后一次性取出整个 pending 链表，解锁；
+ *   3. 遍历链表，为每个任务调用 worker_add_easy 加入 multi；
+ *   4. curl_multi_perform 推进所有传输，curl_multi_poll 等待网络事件（200ms 超时）；
+ *   5. curl_multi_info_read 读取已完成的传输，通过 CURLINFO_PRIVATE 找回 job，
+ *      按 stream / non-stream 调用 complete_*，随后用 event_base_once 投递释放；
+ *   6. 若 w->stop 为 true，退出循环并 curl_multi_cleanup。
+ */
 static void *worker_loop(void *arg) {
     worker_t *w = (worker_t *)arg;
     w->multi = curl_multi_init();
@@ -201,6 +313,16 @@ static void *worker_loop(void *arg) {
     return NULL;
 }
 
+/**
+ * @brief 将任务以轮询方式加入工作线程队列
+ * @param job 已构造好的 gateway_job_t 任务指针
+ *
+ * 使用原子递增的 RR（round-robin）计数器对 WORKER_COUNT 取模，
+ * 选择目标 worker，避免某个 worker 过载。
+ * 加锁后将任务挂到 pending 链表尾部，并用 pthread_cond_signal 唤醒
+ * 可能正在休眠的 worker 线程。该函数可在任意线程调用（通常由
+ * libevent HTTP 请求处理线程调用）。
+ */
 void enqueue_job(gateway_job_t *job) {
     worker_t *w = &WORKERS[(RR++) % WORKER_COUNT];
     job->worker = w;
@@ -212,6 +334,13 @@ void enqueue_job(gateway_job_t *job) {
     pthread_mutex_unlock(&w->mu);
 }
 
+/**
+ * @brief 启动所有工作线程
+ *
+ * 遍历 WORKERS 数组（长度为 WORKER_COUNT），为每个 worker 设置 id，
+ * 初始化互斥锁与条件变量，然后创建 pthread 执行 worker_loop。
+ * 创建完成后，所有 worker 即进入等待状态，直到有任务被 enqueue。
+ */
 void workers_start(void) {
     for (int i = 0; i < WORKER_COUNT; i++) {
         WORKERS[i].id = i;
@@ -221,6 +350,14 @@ void workers_start(void) {
     }
 }
 
+/**
+ * @brief 优雅停止所有工作线程
+ *
+ * 分两步：
+ *   1. 广播阶段：向每个 worker 加锁设置 stop=true，并用 cond_signal 唤醒；
+ *   2. 等待阶段：依次 pthread_join，确保线程资源完全回收。
+ * 该函数应在 event_base_dispatch 返回后、进程退出前调用。
+ */
 void workers_stop(void) {
     for (int i = 0; i < WORKER_COUNT; i++) {
         pthread_mutex_lock(&WORKERS[i].mu);
@@ -231,6 +368,23 @@ void workers_stop(void) {
     for (int i = 0; i < WORKER_COUNT; i++) pthread_join(WORKERS[i].tid, NULL);
 }
 
+/**
+ * @brief 彻底释放 gateway_job_t 占用的全部内存与句柄
+ * @param job 任务指针（NULL 安全）
+ *
+ * 释放顺序与注意事项：
+ *   1. 释放所有动态分配的字符串字段，并将指针置 NULL，防止重复释放；
+ *   2. membuf_free 释放上游响应体缓冲区；
+ *   3. stream_state_free 释放 SSE 解析过程中积累的临时文本与 linebuf；
+ *   4. curl_slist_free_all 释放 HTTP 请求头链表；
+ *   5. curl_easy_cleanup 释放 libcurl easy handle（若尚未从 multi 移除，
+ *      调用方应先 curl_multi_remove_handle）；
+ *   6. client_req 处理：若尚未发送响应且 BASE 存在，
+ *      通过 event_base_once 延迟到主线程释放；否则直接释放；
+ *   7. pthread_mutex_destroy 销毁 send_mu；
+ *   8. evbuffer_free 释放 send_buf（流式发送缓冲区）；
+ *   9. 最后 free(job) 本身。
+ */
 void job_free(gateway_job_t *job) {
     if (!job) return;
     free(job->request_body); job->request_body = NULL;
