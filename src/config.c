@@ -45,6 +45,7 @@ static cJSON *default_config(void) {
         "\"realtime_print\":\"false\","
         "\"gateway_api_key\":\"cc-local-token\","
         "\"admin_token\":\"admin-local-token\","
+        "\"admin_password\":\"topwalk\","
         "\"worker_threads\":4,"
         "\"active_model\":\"qwen-coder\","
         "\"models\":[{"
@@ -107,6 +108,14 @@ int config_load(const char *path) {
         free(p);
         log_msg("WARN", "created default config: %s", G.path);
     }
+    /* Back-compat: add admin_password if missing */
+    if (!cJSON_GetObjectItemCaseSensitive(root, "admin_password")) {
+        cJSON_AddStringToObject(root, "admin_password", "topwalk");
+        char *p = cJSON_Print(root);
+        write_file_atomic(G.path, p);
+        free(p);
+        log_msg("INFO", "added default admin_password to config");
+    }
     G.root = root;
     WORKER_COUNT = (int)json_get_long(root, "worker_threads", 4);
     if (WORKER_COUNT < 1) WORKER_COUNT = 1;
@@ -157,21 +166,8 @@ char *config_get_string_copy(const char *key) {
 
 char *config_masked_json(void) {
     pthread_rwlock_rdlock(&G.lock);
-    cJSON *copy = cJSON_Duplicate(G.root, 1);
+    char *out = cJSON_Print(G.root);
     pthread_rwlock_unlock(&G.lock);
-    cJSON *models = cJSON_GetObjectItemCaseSensitive(copy, "models");
-    if (cJSON_IsArray(models)) {
-        cJSON *m;
-        cJSON_ArrayForEach(m, models) {
-            cJSON *k = cJSON_GetObjectItemCaseSensitive(m, "api_key");
-            if (cJSON_IsString(k) && k->valuestring && strlen(k->valuestring) > 0) {
-                cJSON_DeleteItemFromObject(m, "api_key");
-                cJSON_AddStringToObject(m, "api_key", MASKED_KEY);
-            }
-        }
-    }
-    char *out = cJSON_Print(copy);
-    cJSON_Delete(copy);
     return out;
 }
 
@@ -232,5 +228,21 @@ int config_set_active_model(const char *id, char **err) {
     free(txt);
     pthread_rwlock_unlock(&G.lock);
     if (rc != 0 && err) *err = xstrdup("failed to persist active_model");
+    return rc;
+}
+
+int config_set_string(const char *key, const char *value, char **err) {
+    if (!key || !*key) { if (err) *err = xstrdup("missing key"); return -1; }
+    pthread_rwlock_wrlock(&G.lock);
+    cJSON *old = cJSON_GetObjectItemCaseSensitive(G.root, key);
+    if (cJSON_IsString(old)) {
+        cJSON_DeleteItemFromObject(G.root, key);
+    }
+    cJSON_AddStringToObject(G.root, key, value);
+    char *txt = cJSON_Print(G.root);
+    int rc = write_file_atomic(G.path, txt);
+    free(txt);
+    pthread_rwlock_unlock(&G.lock);
+    if (rc != 0 && err) *err = xstrdup("failed to persist config");
     return rc;
 }

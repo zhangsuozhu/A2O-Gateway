@@ -31,17 +31,25 @@ Claude Code
   - `extra_body`: 厂商私有扩展参数
 - 双认证方式：`Authorization: Bearer` 或 `x-api-key` 请求头
 - 健康检查端点：`GET /healthz` 和 `GET /readyz`
-- 支持 Web 配置界面：`http://127.0.0.1:8080/admin`（根路径 `/` 也跳转管理页）
+- 支持 Web 配置界面（密码 + session 登录）：
+  - `GET /` — 根路径跳转管理页
+  - `GET /admin` — Web 管理界面
   - 运行时查看/修改配置
   - 一键切换默认模型
-  - 一键生成 Claude Code 配置
+  - 一键修改管理员密码
+  - 一键生成 Claude Code 连接信息
+- 会话认证：管理员通过密码登录，服务端生成 session token，支持登录/登出
 - 支持默认模型切换：Claude Code 没传入匹配模型时使用 `active_model`
 - 支持按 `model` 路由：Claude Code 的 `ANTHROPIC_MODEL` 或 `claude --model xxx` 对应配置中的 `models[].id`
 - 支持流式 SSE 转换：OpenAI chunk -> Anthropic stream events
 - 支持工具调用转换：Anthropic tools/tool_use <-> OpenAI tools/tool_calls，流式+非流式
+- 支持 `reasoning_content`（OpenAI 推理字段）到 Anthropic `thinking` 块的转换
+- 实时终端打印：支持 `"all"`（完整 JSON）和 `"txt"`（纯文本）两种模式
+- 日志文件输出：同时输出到 stderr 和 `gateway.log`
 - 使用 `libcurl multi` + worker 线程池（可配置），连接复用上游
 - 使用 `libevent` 提供 HTTP 服务
 - 配置文件热加载（通过 Web UI 修改即时生效）
+- 支持 `GATEWAY_CONFIG` 环境变量指定配置文件路径
 
 ## 依赖
 
@@ -79,7 +87,7 @@ vim config/gateway.local.json
 ```json
 {
   "gateway_api_key": "cc-local-token",
-  "admin_token": "admin-local-token",
+  "admin_password": "your-admin-password",
   "active_model": "qwen-coder",
   "models": [
     {
@@ -93,10 +101,15 @@ vim config/gateway.local.json
 }
 ```
 
-启动：
+启动（支持 `GATEWAY_CONFIG` 环境变量或命令行参数传配置文件路径）：
 
 ```bash
+# 方式一：命令行参数
 ./build/cc-oai-gateway ./config/gateway.local.json
+
+# 方式二：环境变量
+export GATEWAY_CONFIG="./config/gateway.local.json"
+./build/cc-oai-gateway
 ```
 
 打开 Web 配置界面：
@@ -105,7 +118,17 @@ vim config/gateway.local.json
 http://127.0.0.1:8080/admin
 ```
 
-输入 `admin_token` 后加载配置。
+输入 `admin_password` 登录后管理配置。
+
+### Realtime 打印模式
+
+配置 `realtime_print` 字段选择实时输出模式：
+
+| 值 | 效果 |
+|---|------|
+| `"false"` | 关闭实时打印（默认） |
+| `"all"` | 实时打印完整 JSON 请求/响应 |
+| `"txt"` | 仅提取对话文本内容，适合纯文本查看 |
 
 ## 配置 Claude Code
 
@@ -189,7 +212,8 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
   "log_level": "info",
   "realtime_print": "false",
   "gateway_api_key": "Claude Code 访问本网关的 token",
-  "admin_token": "Web 管理界面 token",
+  "admin_token": "Web 管理界面 token（与 admin_password 同步）",
+  "admin_password": "Web 管理界面登录密码",
   "worker_threads": 4,
   "active_model": "默认模型 id",
   "models": [
@@ -225,7 +249,8 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 | `log_level` | 顶层 | string | 日志级别：`debug`/`info`/`warn`/`error` |
 | `realtime_print` | 顶层 | string | 实时输出模式：`"false"` 关闭、`"all"` 完整 JSON、`"txt"` 纯文本（仅提取对话内容） |
 | `gateway_api_key` | 顶层 | string | Claude Code 认证凭据 |
-| `admin_token` | 顶层 | string | Web 管理界面登录凭据 |
+| `admin_token` | 顶层 | string | Web 管理界面认证凭据（与 admin_password 同步） |
+| `admin_password` | 顶层 | string | Web 管理界面登录密码，通过 UI 登录后获取 session |
 | `worker_threads` | 顶层 | number | 工作线程数，范围 1-8 |
 | `active_model` | 顶层 | string | 默认模型 ID |
 | `models[].id` | 模型 | string | Claude Code 侧使用的模型名（`--model` 参数） |
@@ -238,6 +263,24 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 | `models[].upstream_model` | 模型 | string | 上游真实模型名 |
 | `models[].params` | 模型 | object | temperature/top_p/max_tokens 等 |
 | `models[].extra_body` | 模型 | object | 厂商私有参数（如 `enable_search`） |
+
+## API 端点
+
+| Method | Path | Handler | Auth |
+|--------|------|---------|------|
+| POST | /v1/messages | 聊天补全（流式+非流式） | gateway_api_key |
+| POST | /v1/messages/count_tokens | Token 近似估算 | gateway_api_key |
+| GET | /v1/models | 模型发现 | gateway_api_key |
+| GET | / | 根路径跳转管理页 | none |
+| GET | /admin | Web 管理界面 | session（admin_password 登录） |
+| POST | /admin/api/login | 密码登录，返回 session token | admin_password |
+| POST | /admin/api/logout | 登出，销毁 session | session token |
+| GET | /admin/api/config | 获取配置（API Key 已掩码） | session token |
+| PUT/POST | /admin/api/config | 更新完整配置 | session token |
+| POST | /admin/api/switch | 切换默认模型 | session token |
+| POST | /admin/api/change-password | 修改管理员密码 | session token + old_password |
+| GET | /healthz | 健康检查 | none |
+| GET | /readyz | 健康检查别名 | none |
 
 ## 转换规则摘要
 
@@ -252,11 +295,13 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 - Anthropic `max_tokens` -> OpenAI `max_tokens`
 - Anthropic `stop_sequences` -> OpenAI `stop`
 - Anthropic `stream` -> OpenAI `stream`
+- Anthropic `thinking` / `signature` -> 暂透传（保留原有字段）
 
 ### OpenAI -> Anthropic
 
 - OpenAI `choices[0].message.content` -> Anthropic `content[{type:text}]`
 - OpenAI `tool_calls` -> Anthropic `content[{type:tool_use}]`
+- OpenAI `choices[0].delta.reasoning_content` -> Anthropic `delta.type=thinking` 块
 - OpenAI `finish_reason=stop` -> `stop_reason=end_turn`
 - OpenAI `finish_reason=length` -> `stop_reason=max_tokens`
 - OpenAI `finish_reason=tool_calls` -> `stop_reason=tool_use`
@@ -265,7 +310,7 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 ## 生产部署建议
 
 - 不要把 Web 管理界面直接暴露到公网；放在内网或反向代理后面。
-- `admin_token` 和 `gateway_api_key` 使用高强度随机值。
+- `admin_token`、`admin_password` 和 `gateway_api_key` 使用高强度随机值。
 - 配置文件权限建议 `chmod 600 config/gateway.local.json`。
 - 在反向代理层启用 TLS、访问日志、限流、IP 白名单。
 - 如需团队使用，建议把 API Key 加密存储，或改接 Vault/KMS。

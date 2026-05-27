@@ -10,5 +10,6 @@ int config_replace_from_json(const char *body, char **err);
 cJSON *config_select_model_copy(const char *requested_model);
 char *config_get_string_copy(const char *key);
 int config_set_active_model(const char *id, char **err);
+int config_set_string(const char *key, const char *value, char **err);
 
 #endif

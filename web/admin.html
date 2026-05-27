@@ -67,6 +67,22 @@
 </head>
 <body>
 
+<!-- 登录界面 -->
+<div id="loginPage" style="display:none;position:fixed;inset:0;background:#0b1120;z-index:2000;display:flex;justify-content:center;align-items:center">
+  <div style="width:90%;max-width:360px;text-align:center">
+    <h1 style="font-size:22px;margin-bottom:8px">⚡ Claude Code 网关</h1>
+    <p style="color:#8899b4;font-size:13px;margin-bottom:24px">请输入管理员密码</p>
+    <div style="background:#131c31;border:1px solid #1e2d4a;border-radius:11px;padding:22px">
+      <div style="margin-bottom:14px">
+        <label style="display:block;text-align:left;font-size:11px;color:#8899b4;margin-bottom:4px">密码</label>
+        <input id="loginPwd" type="password" placeholder="输入管理员密码" style="width:100%;padding:9px 11px;background:#0a1120;border:1px solid #1e2d4a;border-radius:6px;color:#e2e8f0;font-size:13px" onkeydown="if(event.key==='Enter')doLogin()" />
+      </div>
+      <button class="green" style="width:100%;padding:9px" onclick="doLogin()">🔓 登录</button>
+      <p id="loginErr" style="color:#ef4444;font-size:12px;margin-top:10px;display:none"></p>
+    </div>
+  </div>
+</div>
+
 <header>
   <div>
     <h1>⚡ Claude Code 网关</h1>
@@ -76,6 +92,8 @@
     <button class="ghost sm" id="envBtn" onclick="toggleEnv()" style="display:none">🔑 连接信息</button>
     <button class="green" id="saveBtn" onclick="save()" style="display:none">💾 保存</button>
     <button id="addBtn" onclick="showAddModal()" style="display:none">＋ 添加模型</button>
+    <button class="ghost sm" id="pwdBtn" onclick="showPwdModal()" style="display:none">🔑 修改密码</button>
+    <button class="ghost sm" id="logoutBtn" onclick="doLogout()" style="display:none">🚪 退出</button>
   </div>
 </header>
 
@@ -132,12 +150,85 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="pwdModal">
+  <div class="modal">
+    <h2>修改密码</h2>
+    <div class="sub">修改管理员密码（admin_token 同步更新）</div>
+    <div class="f"><label>当前密码</label><input id="pwdOld" type="password" placeholder="输入当前密码" /></div>
+    <div class="f"><label>新密码</label><input id="pwdNew" type="password" placeholder="输入新密码" /></div>
+    <div class="f"><label>确认新密码</label><input id="pwdConfirm" type="password" placeholder="再次输入新密码" /></div>
+    <div class="ma">
+      <button class="ghost" onclick="hidePwdModal()">取消</button>
+      <button class="green" onclick="confirmPwd()">✓ 修改</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 // ── 状态 ──
 let cfg = null;
 let dirty = false;
+let sessionToken = localStorage.getItem('admin_session') || '';
+
+// ── 登录 ──
+function checkLogin() {
+  if (!sessionToken) {
+    $('loginPage').style.display = 'flex';
+    $('logoutBtn').style.display = 'none';
+    return false;
+  }
+  $('loginPage').style.display = 'none';
+  $('logoutBtn').style.display = '';
+  return true;
+}
+
+async function doLogin() {
+  var pwd = $('loginPwd').value.trim();
+  if (!pwd) { $('loginErr').textContent = '请输入密码'; $('loginErr').style.display = ''; return; }
+  try {
+    var r = await fetch('/admin/api/login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({password: pwd})
+    });
+    var data = await r.json();
+    if (data.ok && data.token) {
+      sessionToken = data.token;
+      localStorage.setItem('admin_session', sessionToken);
+      $('loginErr').style.display = 'none';
+      $('loginPwd').value = '';
+      checkLogin();
+      init();
+    } else {
+      $('loginErr').textContent = data.error && data.error.message ? data.error.message : '密码错误';
+      $('loginErr').style.display = '';
+    }
+  } catch(e) {
+    $('loginErr').textContent = '登录失败: ' + (e.message || String(e));
+    $('loginErr').style.display = '';
+  }
+}
+
+async function doLogout() {
+  if (sessionToken) {
+    await fetch('/admin/api/logout', {
+      method: 'POST',
+      headers: {'x-session-token': sessionToken}
+    });
+  }
+  sessionToken = '';
+  localStorage.removeItem('admin_session');
+  checkLogin();
+  location.reload();
+}
+
+function apiHeaders() {
+  var h = {'Content-Type':'application/json'};
+  if (sessionToken) h['x-session-token'] = sessionToken;
+  return h;
+}
 
 // ── 工具 ──
 function $(id) { return document.getElementById(id); }
@@ -153,14 +244,21 @@ function toast(msg, isErr) {
 
 // ── 初始化 ──
 async function init() {
+  if (!checkLogin()) return;
   $('loading').style.display = 'block';
   $('loaded').style.display = 'none';
   $('errorBox').style.display = 'none';
   $('headerStatus').textContent = '加载中...';
 
   try {
-    var r = await fetch('/admin/api/config');
+    var r = await fetch('/admin/api/config', {headers: apiHeaders()});
     if (!r.ok) {
+      if (r.status === 401) {
+        sessionToken = '';
+        localStorage.removeItem('admin_session');
+        checkLogin();
+        return;
+      }
       var text = await r.text();
       showError('HTTP ' + r.status + ': ' + text);
       return;
@@ -191,6 +289,7 @@ function render() {
   $('saveBtn').style.display = '';
   $('addBtn').style.display = '';
   $('envBtn').style.display = '';
+  $('pwdBtn').style.display = '';
   renderModels();
 }
 
@@ -330,10 +429,11 @@ function setActive(i) {
   renderModels();
   fetch('/admin/api/switch', {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: apiHeaders(),
     body: JSON.stringify({active_model: cfg.active_model})
   }).then(function(r) {
     if (r.ok) toast('✅ 已切换为: ' + cfg.active_model);
+    else if (r.status === 401) { checkLogin(); }
     else r.text().then(function(t) { toast('切换失败: ' + t, true); });
   });
 }
@@ -361,17 +461,53 @@ function del(i) {
 // ── 保存 ──
 async function save() {
   var data = collect();
-  var r = await fetch('/admin/api/config', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
-  if (!r.ok) { var t = await r.text(); toast('保存失败: ' + t, true); return; }
+  var r = await fetch('/admin/api/config', {method:'PUT', headers:apiHeaders(), body: JSON.stringify(data)});
+  if (!r.ok) {
+    if (r.status === 401) { checkLogin(); return; }
+    var t = await r.text(); toast('保存失败: ' + t, true); return;
+  }
   dirty = false;
   // 保存后重新加载
-  var r2 = await fetch('/admin/api/config');
+  var r2 = await fetch('/admin/api/config', {headers: apiHeaders()});
   if (r2.ok) { cfg = await r2.json(); render(); }
   $('headerStatus').textContent = '💾 已保存 — 共 ' + cfg.models.length + ' 个模型';
   toast('💾 已保存，全部生效', 'save');
 }
 
-// ── 弹窗 ──
+// ── 修改密码 ──
+function showPwdModal() {
+  $('pwdOld').value = '';
+  $('pwdNew').value = '';
+  $('pwdConfirm').value = '';
+  $('pwdModal').classList.add('show');
+  setTimeout(function() { $('pwdOld').focus(); }, 100);
+}
+function hidePwdModal() { $('pwdModal').classList.remove('show'); }
+
+async function confirmPwd() {
+  var old = $('pwdOld').value.trim();
+  var pw = $('pwdNew').value.trim();
+  var cf = $('pwdConfirm').value.trim();
+  if (!old) { toast('请输入当前密码', true); $('pwdOld').focus(); return; }
+  if (!pw) { toast('请输入新密码', true); $('pwdNew').focus(); return; }
+  if (pw.length < 4) { toast('新密码至少 4 个字符', true); $('pwdNew').focus(); return; }
+  if (pw !== cf) { toast('两次密码不一致', true); $('pwdConfirm').focus(); return; }
+  try {
+    var r = await fetch('/admin/api/change-password', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({old_password: old, new_password: pw})
+    });
+    var data = await r.json();
+    if (data.ok) {
+      hidePwdModal();
+      toast('✅ 密码已修改');
+    } else {
+      toast(data.error && data.error.message ? data.error.message : '修改失败', true);
+    }
+  } catch(e) { toast('修改失败: ' + (e.message || String(e)), true); }
+}
+
 function showAddModal() {
   $('modalId').value = '';
   $('modalProvider').value = '';
@@ -457,6 +593,9 @@ document.addEventListener('keydown', function(e) {
 // 点击遮罩关闭弹窗
 $('addModal').addEventListener('click', function(e) {
   if (e.target === e.currentTarget) hideAddModal();
+});
+$('pwdModal').addEventListener('click', function(e) {
+  if (e.target === e.currentTarget) hidePwdModal();
 });
 
 // ── 启动 ──
