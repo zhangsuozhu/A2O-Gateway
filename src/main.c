@@ -1,3 +1,18 @@
+/**
+ * @file main.c
+ * @brief 程序入口和主循环
+ *
+ * 本文件负责网关进程的完整生命周期管理：
+ *   1. 读取配置文件（支持环境变量 GATEWAY_CONFIG 或命令行参数）；
+ *   2. 初始化 libevent pthread 支持、libcurl 全局环境；
+ *   3. 加载配置并打开日志文件；
+ *   4. 启动 worker 线程池；
+ *   5. 创建 libevent event_base 和 evhttp 服务器，绑定监听端口；
+ *   6. 注册 SIGINT / SIGTERM 信号事件，实现优雅退出；
+ *   7. 进入 event_base_dispatch 主循环，直到收到信号；
+ *   8. 依次停止 worker、释放 HTTP 服务器、清理 curl 全局资源。
+ */
+
 #define _GNU_SOURCE
 
 #include <event2/event.h>
@@ -20,20 +35,75 @@
 #include "worker.h"
 #include "handlers.h"
 
-/* Global variables (defined here, declared extern in types.h) */
+/*
+ * 以下全局变量在本文件定义，在 types.h 中声明为 extern，
+ * 供 worker.c、stream.c 等其他编译单元共享访问。
+ */
+
+/** @brief libevent 主事件循环基座，所有事件（定时器、信号、HTTP）均注册于此 */
 struct event_base *BASE = NULL;
+
+/** @brief libevent HTTP 服务器对象，负责接收和分发客户端请求 */
 struct evhttp *HTTP = NULL;
+
+/** @brief worker 线程池数组，长度由 WORKER_COUNT 决定（最大 MAX_WORKERS） */
 worker_t WORKERS[MAX_WORKERS];
+
+/** @brief 实际启动的 worker 线程数量，默认值为 4 */
 int WORKER_COUNT = 4;
+
+/** @brief 轮询计数器，用于 enqueue_job 的 round-robin 负载均衡 */
 unsigned long RR = 0;
+
+/** @brief 进程停止标志，由信号处理函数设置，主循环据此判断是否需要退出 */
 volatile sig_atomic_t STOP = 0;
 
+/**
+ * @brief 信号处理回调（SIGINT / SIGTERM）
+ * @param sig     信号编号
+ * @param events  libevent 事件标志（未使用）
+ * @param arg     用户参数（未使用）
+ *
+ * 设置 STOP = 1，并调用 event_base_loopexit 请求 event_base_dispatch 立即返回。
+ * 使用 sig_atomic_t 保证在信号上下文和主循环之间安全读写。
+ */
 static void on_signal(evutil_socket_t sig, short events, void *arg) {
     (void)sig; (void)events; (void)arg;
     STOP = 1;
     if (BASE) event_base_loopexit(BASE, NULL);
 }
 
+/**
+ * @brief 主函数
+ * @param argc 命令行参数个数
+ * @param argv 命令行参数数组
+ * @return 0 表示正常退出，非 0 表示初始化失败
+ *
+ * 启动流程详解：
+ *   1. 配置路径解析：
+ *      - 优先读取环境变量 GATEWAY_CONFIG；
+ *      - 其次使用默认值 DEFAULT_CONFIG_PATH（"./config/gateway.json"）；
+ *      - 命令行参数可覆盖上述两者。
+ *   2. 忽略 SIGPIPE：防止向已关闭的 TCP 连接写数据导致进程被终止。
+ *   3. evthread_use_pthreads()：启用 libevent 的 pthread 锁支持，
+ *      使 evbuffer、evhttp 等结构在多线程环境下线程安全。
+ *   4. curl_global_init：初始化 libcurl 全局状态（SSL、DNS 等）。
+ *   5. config_load + log_open：加载 JSON 配置，打开 gateway.log 日志文件。
+ *   6. 监听端口读取：从配置中解析 listen_port，默认 8080。
+ *   7. workers_start()：启动后台 worker 线程池，准备处理上游请求。
+ *   8. event_base_new + evhttp_new：创建 libevent 主循环与 HTTP 服务器。
+ *   9. evhttp_set_allowed_methods：允许 GET、POST、PUT、OPTIONS。
+ *  10. evhttp_set_gencb：设置通用回调为 handle_root，处理所有 URI。
+ *  11. evhttp_bind_socket：绑定到 listen_host:listen_port，失败则进程退出。
+ *  12. evsignal_new + event_add：注册 SIGINT 和 SIGTERM 信号事件。
+ *  13. event_base_dispatch：阻塞进入主循环，处理网络事件直到 on_signal 触发退出。
+ *
+ * 关闭流程（dispatch 返回后）：
+ *   - workers_stop()：等待所有 worker 线程结束；
+ *   - evhttp_free / event_free / event_base_free：释放 libevent 对象；
+ *   - curl_global_cleanup：清理 libcurl 全局资源；
+ *   - log_open(NULL)：关闭日志文件。
+ */
 int main(int argc, char **argv) {
     const char *config_path = getenv("GATEWAY_CONFIG");
     if (!config_path) config_path = DEFAULT_CONFIG_PATH;
