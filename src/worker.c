@@ -1,6 +1,7 @@
 #include "worker.h"
 #include "stream.h"
 #include "convert.h"
+#include "stats.h"
 #include "log.h"
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -8,6 +9,7 @@
 #include <curl/curl.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 static void deferred_req_free(evutil_socket_t fd, short what, void *arg) {
     (void)fd; (void)what;
@@ -100,6 +102,12 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     if (json_out) {
         rt_print_json("[RES_BODY]", json_out);
     }
+    
+    struct timespec end_time;
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+    double latency_ms = (end_time.tv_sec - job->start_time.tv_sec) * 1000.0 + (end_time.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
+    stats_request_end(job->client_model, false, code_out == 200 ? 200 : (job->upstream_status > 0 ? (int)job->upstream_status : 502), 
+                      rc, job->upstream_body.len, input_tokens, output_tokens, latency_ms);
 }
 
 static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
@@ -120,6 +128,14 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
         log_msg("INFO", "STRM_OK model=%s upstream_status=%ld", job->client_model, job->upstream_status);
     }
     stream_finish(job);
+    
+    struct timespec end_time;
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+    double latency_ms = (end_time.tv_sec - job->start_time.tv_sec) * 1000.0 + (end_time.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
+    stats_request_end(job->client_model, true, 
+                      (rc == CURLE_OK && job->upstream_status < 400) ? 200 : (job->upstream_status > 0 ? (int)job->upstream_status : 502),
+                      rc, job->upstream_body.len, 
+                      job->stream_state.prompt_tokens, job->stream_state.completion_tokens, latency_ms);
 }
 
 static void worker_add_easy(worker_t *w, gateway_job_t *job) {

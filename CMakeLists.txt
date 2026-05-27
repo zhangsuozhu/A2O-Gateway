@@ -18,6 +18,7 @@ set(GATEWAY_SOURCES
     src/stream.c
     src/worker.c
     src/handlers.c
+    src/stats.c
 )
 
 add_executable(cc-oai-gateway ${GATEWAY_SOURCES})

@@ -19,6 +19,7 @@
 #include "stream.h"
 #include "worker.h"
 #include "handlers.h"
+#include "stats.h"
 
 /* Global variables (defined here, declared extern in types.h) */
 struct event_base *BASE = NULL;
@@ -43,6 +44,7 @@ int main(int argc, char **argv) {
     if (evthread_use_pthreads() != 0) { fprintf(stderr, "evthread_use_pthreads failed\n"); return 1; }
     curl_global_init(CURL_GLOBAL_DEFAULT);
     config_load(config_path);
+    stats_init();
     log_open("gateway.log");
 
     char *host = config_get_string_copy("listen_host");

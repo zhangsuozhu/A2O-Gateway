@@ -2,12 +2,14 @@
 #include "config.h"
 #include "convert.h"
 #include "worker.h"
+#include "stats.h"
 #include "log.h"
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <time.h>
 
 static const char *header_get(struct evhttp_request *req, const char *name) {
     return evhttp_find_header(evhttp_request_get_input_headers(req), name);
@@ -29,6 +31,13 @@ static bool auth_ok(struct evhttp_request *req, const char *required) {
     const char *a = header_get(req, "authorization");
     if (a && strncasecmp(a, "Bearer ", 7) == 0 && constant_time_eq(a + 7, required)) return true;
     return false;
+}
+
+static bool admin_auth_ok(struct evhttp_request *req) {
+    char *k = config_get_string_copy("admin_token");
+    bool ok = auth_ok(req, k);
+    free(k);
+    return ok;
 }
 
 static bool gateway_auth_ok(struct evhttp_request *req) {
@@ -145,6 +154,8 @@ static void handle_messages(struct evhttp_request *req) {
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
     job->stream = stream;
     job->stream_state.client_model = xstrdup(job->client_model);
+    clock_gettime(CLOCK_MONOTONIC, &job->start_time);
+    stats_request_begin(job->client_model, stream, body ? strlen(body) : 0);
     evhttp_request_own(req);
     enqueue_job(job);
 
@@ -249,6 +260,31 @@ static void handle_switch(struct evhttp_request *req) {
     free(err); cJSON_Delete(j); free(body);
 }
 
+static void handle_stats(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    cJSON *stats = stats_get_json();
+    if (!stats) { send_error_json(req, 500, "internal_error", "failed to get stats"); return; }
+    char *json = cJSON_PrintUnformatted(stats);
+    cJSON_Delete(stats);
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add_printf(out, "%s", json ? json : "{}");
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "application/json; charset=utf-8");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+    free(json);
+}
+
+static void handle_stats_reset(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) { send_error_json(req, 405, "method_not_allowed", "POST required"); return; }
+    stats_reset();
+    cJSON *ok = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ok, "ok", true);
+    send_json(req, 200, ok);
+    cJSON_Delete(ok);
+}
+
 static void handle_admin_html(struct evhttp_request *req) {
     size_t n = 0;
     char *html = NULL;
@@ -296,6 +332,8 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/admin/api/config") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_config_get(req); return; }
     if (URI_IS("/admin/api/config") && (evhttp_request_get_command(req) == EVHTTP_REQ_PUT || evhttp_request_get_command(req) == EVHTTP_REQ_POST)) { handle_config_put(req); return; }
     if (URI_IS("/admin/api/switch")) { handle_switch(req); return; }
+    if (URI_IS("/admin/api/stats") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_stats(req); return; }
+    if (URI_IS("/admin/api/stats/reset") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_stats_reset(req); return; }
 #undef URI_IS
     send_error_json(req, 404, "not_found", "not found");
 }

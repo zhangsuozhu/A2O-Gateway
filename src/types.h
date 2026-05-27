@@ -106,6 +106,7 @@ struct gateway_job {
     bool send_end;
     char *nonstream_json;
     int nonstream_code;
+    struct timespec start_time;
 };
 
 extern struct event_base *BASE;
