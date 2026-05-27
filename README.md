@@ -15,27 +15,33 @@ Claude Code
 ## 能力清单
 
 - 对 Claude Code 暴露 Anthropic Messages 兼容接口：
-  - `POST /v1/messages`
-  - `POST /v1/messages/count_tokens`
-  - `GET /v1/models`（供支持 gateway model discovery 的 Claude Code 版本发现模型）
+  - `POST /v1/messages` — 聊天补全（流式+非流式）
+  - `POST /v1/messages/count_tokens` — Token 近似估算
+  - `GET /v1/models` — 模型发现
 - 向上游请求 OpenAI-compatible Chat Completions：
   - 默认拼接 `{base_url}/chat/completions`
   - 也可配置完整 `endpoint`
-- 支持多模型、多厂商配置：
+- 多模型、多厂商配置（实时生效）：
   - `id`: Claude Code 侧看到的模型名
-  - `provider`: 模型厂商
-  - `base_url` / `endpoint`: 模型接口
+  - `provider`: 模型厂商标识
+  - `base_url` / `endpoint`: 模型接口地址
   - `api_key`: 上游密钥
   - `upstream_model`: 上游真实模型名称
   - `params`: temperature/top_p 等常规参数
   - `extra_body`: 厂商私有扩展参数
-- 支持 Web 配置界面：`http://127.0.0.1:8080/admin`
+- 双认证方式：`Authorization: Bearer` 或 `x-api-key` 请求头
+- 健康检查端点：`GET /healthz` 和 `GET /readyz`
+- 支持 Web 配置界面：`http://127.0.0.1:8080/admin`（根路径 `/` 也跳转管理页）
+  - 运行时查看/修改配置
+  - 一键切换默认模型
+  - 一键生成 Claude Code 配置
 - 支持默认模型切换：Claude Code 没传入匹配模型时使用 `active_model`
 - 支持按 `model` 路由：Claude Code 的 `ANTHROPIC_MODEL` 或 `claude --model xxx` 对应配置中的 `models[].id`
 - 支持流式 SSE 转换：OpenAI chunk -> Anthropic stream events
-- 支持工具调用转换：Anthropic tools/tool_use <-> OpenAI tools/tool_calls
-- 使用 `libcurl multi` + HTTP/2 multiplexing 连接复用上游
+- 支持工具调用转换：Anthropic tools/tool_use <-> OpenAI tools/tool_calls，流式+非流式
+- 使用 `libcurl multi` + worker 线程池（可配置），连接复用上游
 - 使用 `libevent` 提供 HTTP 服务
+- 配置文件热加载（通过 Web UI 修改即时生效）
 
 ## 依赖
 
@@ -135,8 +141,12 @@ claude --model qwen-coder
 
 ## 手工测试
 
-非流式：
+健康检查：
+```bash
+curl http://127.0.0.1:8080/healthz
+```
 
+非流式：
 ```bash
 curl http://127.0.0.1:8080/v1/messages \
   -H 'Content-Type: application/json' \
@@ -145,7 +155,6 @@ curl http://127.0.0.1:8080/v1/messages \
 ```
 
 流式：
-
 ```bash
 curl -N http://127.0.0.1:8080/v1/messages \
   -H 'Content-Type: application/json' \
@@ -153,8 +162,15 @@ curl -N http://127.0.0.1:8080/v1/messages \
   -d @examples/anthropic-stream.json
 ```
 
-Token 估算：
+工具调用（非流式）：
+```bash
+curl http://127.0.0.1:8080/v1/messages \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer cc-local-token' \
+  -d @examples/anthropic-tool.json
+```
 
+Token 估算：
 ```bash
 curl http://127.0.0.1:8080/v1/messages/count_tokens \
   -H 'Content-Type: application/json' \
@@ -170,6 +186,8 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 {
   "listen_host": "0.0.0.0",
   "listen_port": 8080,
+  "log_level": "info",
+  "realtime_print": "false",
   "gateway_api_key": "Claude Code 访问本网关的 token",
   "admin_token": "Web 管理界面 token",
   "worker_threads": 4,
@@ -187,7 +205,8 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
       "enabled": true,
       "params": {
         "temperature": 0.2,
-        "top_p": 0.95
+        "top_p": 0.95,
+        "max_tokens": 4096
       },
       "extra_body": {
         "enable_search": true
@@ -196,6 +215,29 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
   ]
 }
 ```
+
+### 配置字段明细
+
+| 字段 | 层级 | 类型 | 说明 |
+|------|------|------|------|
+| `listen_host` | 顶层 | string | 监听地址，默认 `0.0.0.0` |
+| `listen_port` | 顶层 | number | 监听端口，默认 `8080` |
+| `log_level` | 顶层 | string | 日志级别：`debug`/`info`/`warn`/`error` |
+| `realtime_print` | 顶层 | string | 实时输出模式：`"false"` 关闭、`"all"` 完整 JSON、`"txt"` 纯文本（仅提取对话内容） |
+| `gateway_api_key` | 顶层 | string | Claude Code 认证凭据 |
+| `admin_token` | 顶层 | string | Web 管理界面登录凭据 |
+| `worker_threads` | 顶层 | number | 工作线程数，范围 1-8 |
+| `active_model` | 顶层 | string | 默认模型 ID |
+| `models[].id` | 模型 | string | Claude Code 侧使用的模型名（`--model` 参数） |
+| `models[].provider` | 模型 | string | 厂商名，仅用于日志/标识 |
+| `models[].display_name` | 模型 | string | Web UI 展示名称 |
+| `models[].enabled` | 模型 | bool | 是否启用，默认 `true` |
+| `models[].base_url` | 模型 | string | OpenAI 兼容接口地址 |
+| `models[].endpoint` | 模型 | string | 完整接口地址；非空时优先于 `base_url` |
+| `models[].api_key` | 模型 | string | 上游 API Key |
+| `models[].upstream_model` | 模型 | string | 上游真实模型名 |
+| `models[].params` | 模型 | object | temperature/top_p/max_tokens 等 |
+| `models[].extra_body` | 模型 | object | 厂商私有参数（如 `enable_search`） |
 
 ## 转换规则摘要
 
@@ -229,6 +271,7 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 - 如需团队使用，建议把 API Key 加密存储，或改接 Vault/KMS。
 - 如需审计，建议只记录请求元信息，不落盘完整 prompt/code。
 - 对工具调用参数必须在实际执行工具前进行业务级校验。
+- 生产环境建议关闭 `realtime_print` 以避免日志重复输出。
 
 ## Docker
 
@@ -239,9 +282,13 @@ docker run --rm -p 8080:8080 \
   cc-oai-gateway:latest
 ```
 
+使用 Docker 时，配置文件路径固定在容器内 `/app/config/gateway.json`，挂载时无需修改模板，直接挂载你的 `gateway.local.json` 即可。
+
 ## 已知限制
 
-- 当前只实现 OpenAI-compatible Chat Completions，不实现 Responses API。
-- `count_tokens` 是近似估算。
-- 不同厂商对 `stream_options.include_usage`、图像、tool_calls 的兼容程度不同；可通过 `extra_body` 或修改转换逻辑适配。
-- Claude Code 的某些 beta header 会被接收但不会透传到 OpenAI 兼容上游，因为上游通常不理解这些 Anthropic header。
+- 当前只实现 OpenAI-compatible Chat Completions，不实现 OpenAI Responses API。
+- `count_tokens` 是近似估算（按字节/4），非真实 tokenizer。
+- 不同厂商对 `stream_options.include_usage`、`max_tokens` 上限、工具调用格式的支持程度不同；可通过 `extra_body` 或修改转换逻辑适配。
+- Claude Code 的某些 beta header（如 `anthropic-beta`）会被接收但不会透传到 OpenAI 兼容上游。
+- 工具调用在流式模式下依赖 SSE chunk 拼接，部分厂商的 tool_calls chunk 格式可能不标准，需逐个适配。
+- 使用 `params.max_tokens` 字段传递给上游，部分厂商可能使用不同字段名（如 `max_tokens` vs `max_new_tokens`）。

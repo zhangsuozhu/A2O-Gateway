@@ -1,6 +1,8 @@
 {
 	"listen_host":	"0.0.0.0",
 	"listen_port":	8080,
+	"log_level":	"info",
+	"realtime_print":	"false",
 	"gateway_api_key":	"cc-local-token",
 	"admin_token":	"admin-local-token",
 	"worker_threads":	4,

@@ -10,8 +10,18 @@ pkg_check_modules(LIBEVENT REQUIRED libevent libevent_pthreads)
 pkg_check_modules(LIBCURL REQUIRED libcurl)
 pkg_check_modules(CJSON REQUIRED libcjson)
 
-add_executable(cc-oai-gateway src/main.c)
-target_include_directories(cc-oai-gateway PRIVATE ${LIBEVENT_INCLUDE_DIRS} ${LIBCURL_INCLUDE_DIRS} ${CJSON_INCLUDE_DIRS})
+set(GATEWAY_SOURCES
+    src/main.c
+    src/log.c
+    src/config.c
+    src/convert.c
+    src/stream.c
+    src/worker.c
+    src/handlers.c
+)
+
+add_executable(cc-oai-gateway ${GATEWAY_SOURCES})
+target_include_directories(cc-oai-gateway PRIVATE src ${LIBEVENT_INCLUDE_DIRS} ${LIBCURL_INCLUDE_DIRS} ${CJSON_INCLUDE_DIRS})
 target_link_directories(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARY_DIRS} ${LIBCURL_LIBRARY_DIRS} ${CJSON_LIBRARY_DIRS})
 target_link_libraries(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARIES} ${LIBCURL_LIBRARIES} ${CJSON_LIBRARIES} pthread)
 

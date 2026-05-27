@@ -8,7 +8,15 @@
 
 ## Project Structure
 
-- **Single source**: `src/main.c` (~1600 lines, C11). All gateway logic lives here.
+- **Source files** (`src/`):
+  - `types.h` — Shared types, constants, inline utilities
+  - `log.h/c` — Logging (level filtering, file output, realtime print)
+  - `config.h/c` — Config load/save/mask/model selection
+  - `convert.h/c` — Anthropic↔OpenAI protocol conversion
+  - `stream.h/c` — SSE streaming parse & convert
+  - `worker.h/c` — libcurl multi worker thread pool
+  - `handlers.h/c` — HTTP route handlers
+  - `main.c` — Entry point, libevent setup, signal handling
 - **Static web UI**: `web/admin.html` (single-file HTML/JS, served at `/admin`)
 - **Examples**: `examples/anthropic-{message,stream,tool}.json` for manual curl testing
 - **Config**: JSON file; `config/gateway.json` is the template, `config/gateway.local.json` is the runtime file
