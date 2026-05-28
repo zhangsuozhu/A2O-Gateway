@@ -50,6 +50,11 @@ Claude Code
 - 使用 `libevent` 提供 HTTP 服务
 - 配置文件热加载（通过 Web UI 修改即时生效）
 - 支持 `GATEWAY_CONFIG` 环境变量指定配置文件路径
+- 请求统计面板（Web UI `/admin` > 统计页签）：
+  - 全局概览：请求数、成功率、活跃请求峰值、延迟、token 用量、流量
+  - 速度统计：输入/输出 token 速度、流量速度（最近 5 秒滑动窗口平均）
+  - 按模型/厂商聚合：每个模型/厂商的请求量、延迟、token、错误码细分
+  - 时间窗口趋势（每小时聚合，保留 24 小时）
 
 ## 依赖
 
@@ -203,6 +208,22 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 
 注意：`count_tokens` 当前是本地估算，不是精确分词。Claude Code 常用它做上下文预估，若你的上游厂商提供 tokenizer API，可以在后续版本中替换为真实实现。
 
+请求统计（需先登录获取 session token）：
+```bash
+# 登录
+curl http://127.0.0.1:8080/admin/api/login \
+  -X POST -d '{"password":"your-admin-password"}'
+# 返回 {"token":"xxxxx"}
+
+# 查看统计
+curl http://127.0.0.1:8080/admin/api/stats \
+  -H 'Authorization: Bearer xxxxx'
+
+# 重置统计
+curl http://127.0.0.1:8080/admin/api/stats/reset \
+  -X POST -H 'Authorization: Bearer xxxxx'
+```
+
 ## 配置字段说明
 
 ```json
@@ -279,6 +300,8 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 | PUT/POST | /admin/api/config | 更新完整配置 | session token |
 | POST | /admin/api/switch | 切换默认模型 | session token |
 | POST | /admin/api/change-password | 修改管理员密码 | session token + old_password |
+| GET | /admin/api/stats | 获取请求统计 | session token |
+| POST | /admin/api/stats/reset | 重置统计 | session token |
 | GET | /healthz | 健康检查 | none |
 | GET | /readyz | 健康检查别名 | none |
 
