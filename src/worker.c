@@ -20,6 +20,7 @@
 #include "worker.h"
 #include "stream.h"
 #include "convert.h"
+#include "stats.h"
 #include "log.h"
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -27,6 +28,7 @@
 #include <curl/curl.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 /**
  * @brief 延迟释放 evhttp_request 的回调函数
@@ -160,6 +162,12 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     if (json_out) {
         rt_print_json("[RES_BODY]", json_out);
     }
+    
+    struct timespec end_time;
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+    double latency_ms = (end_time.tv_sec - job->start_time.tv_sec) * 1000.0 + (end_time.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
+    stats_request_end(job->client_model, false, code_out == 200 ? 200 : (job->upstream_status > 0 ? (int)job->upstream_status : 502), 
+                      rc, job->upstream_body.len, input_tokens, output_tokens, latency_ms);
 }
 
 /**
@@ -177,23 +185,35 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
  *   5. 最后调用 stream_finish 发送最终 SSE 结束标志（如 message_stop 等）。
  */
 static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
-    if (job->stream_state.ended) {
-        log_msg("INFO", "STRM_END model=%s already ended", job->client_model);
+    if (job->stream_state.stats_recorded) {
         return;
     }
-    if (rc != CURLE_OK) {
-        log_msg("ERROR", "STRM_FAIL model=%s url=%s curl_error=%s", job->client_model, job->upstream_url, curl_easy_strerror(rc));
-        stream_emit_error(job, curl_easy_strerror(rc));
+    if (!job->stream_state.ended) {
+        if (rc != CURLE_OK) {
+            log_msg("ERROR", "STRM_FAIL model=%s url=%s curl_error=%s", job->client_model, job->upstream_url, curl_easy_strerror(rc));
+            stream_emit_error(job, curl_easy_strerror(rc));
+        }
+        curl_easy_getinfo(job->easy, CURLINFO_RESPONSE_CODE, &job->upstream_status);
+        if (job->upstream_status >= 400) {
+            log_msg("ERROR", "STRM_HTTP_ERR model=%s status=%ld body=%.*s", job->client_model, job->upstream_status, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
+            stream_emit_error(job, "upstream returned HTTP error");
+        }
+        if (rc == CURLE_OK && job->upstream_status < 400) {
+            log_msg("INFO", "STRM_OK model=%s upstream_status=%ld", job->client_model, job->upstream_status);
+        }
+        stream_finish(job);
     }
-    curl_easy_getinfo(job->easy, CURLINFO_RESPONSE_CODE, &job->upstream_status);
-    if (job->upstream_status >= 400) {
-        log_msg("ERROR", "STRM_HTTP_ERR model=%s status=%ld body=%.*s", job->client_model, job->upstream_status, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
-        stream_emit_error(job, "upstream returned HTTP error");
-    }
-    if (rc == CURLE_OK && job->upstream_status < 400) {
-        log_msg("INFO", "STRM_OK model=%s upstream_status=%ld", job->client_model, job->upstream_status);
-    }
-    stream_finish(job);
+
+    struct timespec end_time;
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+    double latency_ms = (end_time.tv_sec - job->start_time.tv_sec) * 1000.0 +
+                        (end_time.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
+    int http_status = (rc == CURLE_OK && job->upstream_status < 400) ? 200 :
+                      (job->upstream_status > 0 ? (int)job->upstream_status : 502);
+    stats_request_end(job->client_model, true, http_status, rc,
+                      job->upstream_body.len,
+                      job->stream_state.prompt_tokens, job->stream_state.completion_tokens, latency_ms);
+    job->stream_state.stats_recorded = true;
 }
 
 /**

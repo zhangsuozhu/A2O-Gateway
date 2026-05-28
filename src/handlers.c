@@ -16,6 +16,7 @@
 #include "config.h"
 #include "convert.h"
 #include "worker.h"
+#include "stats.h"
 #include "log.h"
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -116,11 +117,6 @@ static void session_destroy(const char *token) {
     pthread_mutex_unlock(&g_sessions_mutex);
 }
 
-static bool admin_auth_ok(struct evhttp_request *req) {
-    const char *token = header_get(req, "x-session-token");
-    return session_valid(token);
-}
-
 /**
  * @brief 通用认证检查
  * @param req      当前 HTTP 请求
@@ -139,6 +135,22 @@ static bool auth_ok(struct evhttp_request *req, const char *required) {
     const char *a = header_get(req, "authorization");
     if (a && strncasecmp(a, "Bearer ", 7) == 0 && constant_time_eq(a + 7, required)) return true;
     return false;
+}
+
+/**
+ * @brief 管理员认证检查（用于 /admin/ 路由）
+ * @param req 当前 HTTP 请求
+ * @return 认证通过返回 true
+ *
+ * 优先检查会话令牌（x-session-token），然后回退到配置中的 admin_token。
+ */
+static bool admin_auth_ok(struct evhttp_request *req) {
+    const char *token = header_get(req, "x-session-token");
+    if (session_valid(token)) return true;
+    char *k = config_get_string_copy("admin_token");
+    bool ok = auth_ok(req, k);
+    free(k);
+    return ok;
 }
 
 /**
@@ -334,6 +346,8 @@ static void handle_messages(struct evhttp_request *req) {
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
     job->stream = stream;
     job->stream_state.client_model = xstrdup(job->client_model);
+    clock_gettime(CLOCK_MONOTONIC, &job->start_time);
+    stats_request_begin(job->client_model, stream, body ? strlen(body) : 0);
     evhttp_request_own(req);
     enqueue_job(job);
 
@@ -521,38 +535,42 @@ static void handle_switch(struct evhttp_request *req) {
 }
 
 /**
- * @brief 修改管理员密码（/admin/api/change-password POST）
+ * @brief 获取网关统计信息（/admin/api/stats GET）
  * @param req HTTP 请求对象
  *
- * 验证旧密码后更新 admin_password 和 admin_token 配置并持久化。
+ * 返回 JSON 格式的完整统计信息，包含全局概览、模型统计和时间窗口。
+ * 需要管理员认证。
  */
-static void handle_change_password(struct evhttp_request *req) {
+static void handle_stats(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    cJSON *stats = stats_get_json();
+    if (!stats) { send_error_json(req, 500, "internal_error", "failed to get stats"); return; }
+    char *json = cJSON_PrintUnformatted(stats);
+    cJSON_Delete(stats);
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add_printf(out, "%s", json ? json : "{}");
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "application/json; charset=utf-8");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+    free(json);
+}
+
+/**
+ * @brief 重置网关统计（/admin/api/stats/reset POST）
+ * @param req HTTP 请求对象
+ *
+ * 清空所有统计数据，重置启动时间。
+ * 需要管理员认证。
+ */
+static void handle_stats_reset(struct evhttp_request *req) {
     if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
     if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) { send_error_json(req, 405, "method_not_allowed", "POST required"); return; }
-    char *body = read_request_body(req, MAX_BODY_BYTES);
-    cJSON *j = body ? cJSON_Parse(body) : NULL;
-    const char *old_pw = j ? json_get_str(j, "old_password") : NULL;
-    const char *new_pw = j ? json_get_str(j, "new_password") : NULL;
-    if (!old_pw || !new_pw || !*new_pw) {
-        send_error_json(req, 400, "invalid_request_error", "old_password and new_password required");
-        cJSON_Delete(j); free(body); return;
-    }
-    char *expected = config_get_string_copy("admin_password");
-    bool ok = false;
-    if (expected && constant_time_eq(old_pw, expected)) ok = true;
-    free(expected);
-    if (!ok) {
-        send_error_json(req, 403, "authentication_error", "old password mismatch");
-        cJSON_Delete(j); free(body); return;
-    }
-    char *err = NULL;
-    int rc = config_set_string("admin_password", new_pw, &err);
-    if (rc != 0) { send_error_json(req, 400, "configuration_error", err ? err : "failed"); free(err); }
-    else {
-        config_set_string("admin_token", new_pw, NULL);
-        cJSON *out = cJSON_CreateObject(); cJSON_AddBoolToObject(out, "ok", true); send_json(req, 200, out); cJSON_Delete(out);
-    }
-    cJSON_Delete(j); free(body);
+    stats_reset();
+    cJSON *ok = cJSON_CreateObject();
+    cJSON_AddBoolToObject(ok, "ok", true);
+    send_json(req, 200, ok);
+    cJSON_Delete(ok);
 }
 
 /**
@@ -635,7 +653,8 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/admin/api/config") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_config_get(req); return; }
     if (URI_IS("/admin/api/config") && (evhttp_request_get_command(req) == EVHTTP_REQ_PUT || evhttp_request_get_command(req) == EVHTTP_REQ_POST)) { handle_config_put(req); return; }
     if (URI_IS("/admin/api/switch")) { handle_switch(req); return; }
-    if (URI_IS("/admin/api/change-password") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_change_password(req); return; }
+    if (URI_IS("/admin/api/stats") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_stats(req); return; }
+    if (URI_IS("/admin/api/stats/reset") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_stats_reset(req); return; }
 #undef URI_IS
     send_error_json(req, 404, "not_found", "not found");
 }

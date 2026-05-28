@@ -194,6 +194,9 @@ typedef struct stream_state {
 
     /* 工具流状态数组：并行跟踪多个工具调用 */
     tool_stream_state_t tools[MAX_TOOL_STREAMS];
+
+    /* 统计防重入标志 */
+    bool stats_recorded;     /**< 标记 stats_request_end 是否已调用 */
 } stream_state_t;
 
 /* 前向声明：避免 worker 和 gateway_job 之间的循环引用 */
@@ -268,6 +271,9 @@ struct gateway_job {
     /* 非流式响应专用 */
     char *nonstream_json;    /**< 非流式模式下，从上游接收到的完整响应 JSON */
     int nonstream_code;      /**< 非流式模式下，返回给客户端的 HTTP 状态码 */
+
+    /* 统计信息 */
+    struct timespec start_time; /**< 任务开始时间（用于计算请求处理延迟） */
 };
 
 /* ====================================================================

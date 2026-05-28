@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>网关配置</title>
+  <title>Claude Code 网关管理</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#0b1120;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
@@ -62,7 +62,29 @@
     .error-box p{margin-bottom:10px}
     #loading{display:block}
     #loaded{display:none}
-    @media(max-width:700px){.g2,.g3{grid-template-columns:1fr}}
+    .tab-btn{position:relative}
+    .tab-btn.active{color:#fff;border-color:#3b82f6;background:rgba(59,130,246,.1)}
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:14px}
+    .stat-card{background:#0e1729;border:1px solid #1e2d4a;border-radius:8px;padding:14px}
+    .stat-card .label{font-size:11px;color:#8899b4;margin-bottom:4px}
+    .stat-card .value{font-size:20px;font-weight:700;color:#e2e8f0}
+    .stat-card .sub{font-size:11px;color:#64748b;margin-top:2px}
+    .stats-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+    .stats-table th,.stats-table td{padding:8px 10px;text-align:left;border-bottom:1px solid #1e2d4a}
+    .stats-table th{color:#8899b4;font-weight:600;font-size:11px;background:#0e1729}
+    .stats-table tr:hover{background:rgba(255,255,255,.02)}
+    .stats-table td{color:#c8d2e6}
+    .stats-table .num{text-align:right;font-variant-numeric:tabular-nums}
+    .chart-wrap{background:#0e1729;border:1px solid #1e2d4a;border-radius:8px;padding:14px;margin-bottom:14px;min-height:180px}
+    .chart-wrap h3{font-size:13px;font-weight:600;margin-bottom:10px;color:#8899b4}
+    .chart-bar{display:flex;align-items:flex-end;gap:3px;height:120px;padding-bottom:20px;position:relative}
+    .chart-bar .bar{flex:1;background:#3b82f6;border-radius:3px 3px 0 0;min-width:4px;position:relative;transition:height .3s ease}
+    .chart-bar .bar:hover{background:#60a5fa}
+    .chart-bar .bar-label{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:#64748b;white-space:nowrap}
+    .chart-bar .bar-val{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:9px;color:#8899b4;white-space:nowrap}
+    .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+    .stats-empty{text-align:center;padding:40px;color:#8899b4;font-size:13px}
+    @media(max-width:700px){.g2,.g3{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
 <body>
@@ -89,6 +111,8 @@
     <div class="sub" id="headerStatus">加载中...</div>
   </div>
   <div class="hdr">
+    <button class="ghost sm tab-btn active" id="tabConfigBtn" onclick="switchTab('config')">⚙️ 配置</button>
+    <button class="ghost sm tab-btn" id="tabStatsBtn" onclick="switchTab('stats')">📊 统计</button>
     <button class="ghost sm" id="envBtn" onclick="toggleEnv()" style="display:none">🔑 连接信息</button>
     <button class="green" id="saveBtn" onclick="save()" style="display:none">💾 保存</button>
     <button id="addBtn" onclick="showAddModal()" style="display:none">＋ 添加模型</button>
@@ -106,29 +130,81 @@
   </div>
 
   <div id="loaded">
-    <div class="card">
-      <h2>⚙️ 全局</h2>
-      <div class="row">
-        <div><label>监听端口</label><input id="port" type="number" /></div>
-        <div><label>Gateway API Key</label><input id="gwKey" placeholder="Claude Code 用此 token 连接" /></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>🤖 模型列表 <span id="modelCount" style="font-size:12px;font-weight:400;color:#8899b4"></span></h2>
-      <div id="models"></div>
-      <div class="empty" id="emptyHint" style="display:none">
-        <p>还没有配置模型</p>
-        <button onclick="showAddModal()">＋ 添加第一个模型</button>
-      </div>
-    </div>
-
-    <div id="envSection" style="display:none">
+    <div id="tabConfigContent">
       <div class="card">
-        <h2>🔑 Claude Code 连接信息</h2>
-        <p style="font-size:12px;color:#8899b4;margin-bottom:8px">设置以下环境变量即可用 Claude Code 连接本网关</p>
-        <div class="env-box" style="background:#060d1a;border:1px solid #1e2d4a;border-radius:7px;padding:11px;font-family:ui-monospace,monospace;font-size:12px;overflow-x:auto;white-space:pre-wrap;color:#c8d2e6"></div>
-        <div style="margin-top:7px"><button class="ghost sm" onclick="copyEnv()">📋 复制</button></div>
+        <h2>⚙️ 全局</h2>
+        <div class="row">
+          <div><label>监听端口</label><input id="port" type="number" /></div>
+          <div><label>Gateway API Key</label><input id="gwKey" placeholder="Claude Code 用此 token 连接" /></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🤖 模型列表 <span id="modelCount" style="font-size:12px;font-weight:400;color:#8899b4"></span></h2>
+        <div id="models"></div>
+        <div class="empty" id="emptyHint" style="display:none">
+          <p>还没有配置模型</p>
+          <button onclick="showAddModal()">＋ 添加第一个模型</button>
+        </div>
+      </div>
+
+      <div id="envSection" style="display:none">
+        <div class="card">
+          <h2>🔑 Claude Code 连接信息</h2>
+          <p style="font-size:12px;color:#8899b4;margin-bottom:8px">设置以下环境变量即可用 Claude Code 连接本网关</p>
+          <div class="env-box" style="background:#060d1a;border:1px solid #1e2d4a;border-radius:7px;padding:11px;font-family:ui-monospace,monospace;font-size:12px;overflow-x:auto;white-space:pre-wrap;color:#c8d2e6"></div>
+          <div style="margin-top:7px"><button class="ghost sm" onclick="copyEnv()">📋 复制</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tabStatsContent" style="display:none">
+      <div class="card">
+        <h2>📊 全局概览</h2>
+        <div class="stats-grid" id="statsOverview">
+          <div class="stat-card"><div class="label">总请求数</div><div class="value" id="statTotalReq">-</div></div>
+          <div class="stat-card"><div class="label">活跃请求</div><div class="value" id="statActiveReq">-</div></div>
+          <div class="stat-card"><div class="label">成功率</div><div class="value" id="statSuccessRate">-</div></div>
+          <div class="stat-card"><div class="label">总 Tokens</div><div class="value" id="statTotalTokens">-</div></div>
+          <div class="stat-card"><div class="label">总流量</div><div class="value" id="statTotalTraffic">-</div></div>
+          <div class="stat-card"><div class="label">平均延迟</div><div class="value" id="statAvgLatency">-</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🤖 模型统计</h2>
+        <div id="statsModelsWrap">
+          <table class="stats-table" id="statsModelsTable">
+            <thead>
+              <tr>
+                <th>模型</th>
+                <th class="num">请求数</th>
+                <th class="num">流式</th>
+                <th class="num">非流式</th>
+                <th class="num">成功</th>
+                <th class="num">失败</th>
+                <th class="num">Input</th>
+                <th class="num">Output</th>
+                <th class="num">流量</th>
+                <th class="num">平均延迟</th>
+                <th class="num">最小</th>
+                <th class="num">最大</th>
+              </tr>
+            </thead>
+            <tbody id="statsModelsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>📈 每小时请求数</h2>
+        <div class="chart-wrap" id="statsChartWrap">
+          <div class="stats-empty">加载中...</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="red" onclick="resetStats()">🗑 重置统计</button>
       </div>
     </div>
   </div>
@@ -171,6 +247,7 @@
 let cfg = null;
 let dirty = false;
 let sessionToken = localStorage.getItem('admin_session') || '';
+let statsTimer = null;
 
 // ── 登录 ──
 function checkLogin() {
@@ -597,6 +674,154 @@ $('addModal').addEventListener('click', function(e) {
 $('pwdModal').addEventListener('click', function(e) {
   if (e.target === e.currentTarget) hidePwdModal();
 });
+
+// ── 标签切换 ──
+function switchTab(tab) {
+  $('tabConfigBtn').classList.toggle('active', tab === 'config');
+  $('tabStatsBtn').classList.toggle('active', tab === 'stats');
+  $('tabConfigContent').style.display = tab === 'config' ? '' : 'none';
+  $('tabStatsContent').style.display = tab === 'stats' ? '' : 'none';
+
+  var showConfigBtns = tab === 'config' && cfg;
+  $('saveBtn').style.display = showConfigBtns ? '' : 'none';
+  $('addBtn').style.display = showConfigBtns ? '' : 'none';
+  $('envBtn').style.display = showConfigBtns ? '' : 'none';
+
+  if (tab === 'stats') {
+    loadStats();
+    if (!statsTimer) statsTimer = setInterval(loadStats, 5000);
+  } else {
+    if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+  }
+}
+
+// ── 统计 ──
+function fmtNum(n) {
+  if (n == null || isNaN(n)) return '-';
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+  return Number(n).toLocaleString();
+}
+function fmtBytes(b) {
+  if (b == null || isNaN(b)) return '-';
+  if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+  if (b >= 1048576) return (b / 1048576).toFixed(2) + ' MB';
+  if (b >= 1024) return (b / 1024).toFixed(2) + ' KB';
+  return b + ' B';
+}
+function fmtMs(ms) {
+  if (ms == null || isNaN(ms)) return '-';
+  if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
+  return Math.round(ms) + 'ms';
+}
+function fmtPct(a, b) {
+  if (!b) return '0%';
+  return ((a / b) * 100).toFixed(1) + '%';
+}
+
+async function loadStats() {
+  try {
+    var r = await fetch('/admin/api/stats', {headers: apiHeaders()});
+    if (!r.ok) {
+      var t = await r.text();
+      renderStatsError('加载失败: HTTP ' + r.status + ' ' + t);
+      return;
+    }
+    var data = await r.json();
+    renderStats(data);
+  } catch (e) {
+    renderStatsError('加载失败: ' + (e.message || String(e)));
+  }
+}
+
+function renderStatsError(msg) {
+  // 概览区域显示错误
+  $('statTotalReq').textContent = '!';
+  $('statActiveReq').textContent = '!';
+  $('statSuccessRate').textContent = '!';
+  $('statTotalTokens').textContent = '!';
+  $('statTotalTraffic').textContent = '!';
+  $('statAvgLatency').textContent = '!';
+  // 模型表格显示错误行
+  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="12" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
+  $('statsChartWrap').innerHTML = '<div class="stats-empty">' + esc(msg) + '</div>';
+}
+
+function renderStats(data) {
+  data = data || {};
+  var g = data.overview || {};
+
+  // 全局概览
+  $('statTotalReq').textContent = fmtNum(g.total_requests);
+  $('statActiveReq').textContent = fmtNum(g.active_requests);
+  $('statSuccessRate').textContent = fmtPct(g.success, g.total_requests);
+  $('statTotalTokens').textContent = fmtNum((g.total_input_tokens || 0) + (g.total_output_tokens || 0));
+  $('statTotalTraffic').textContent = fmtBytes(g.total_bytes);
+  $('statAvgLatency').textContent = fmtMs(g.avg_latency_ms);
+
+  // 模型统计 - 先确保表格结构存在
+  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table>';
+  var tbody = $('statsModelsBody');
+  tbody.innerHTML = '';
+  var models = data.models || [];
+  if (!models.length) {
+    tbody.innerHTML = '<tr><td colspan="12" class="stats-empty">暂无模型统计数据</td></tr>';
+  } else {
+    for (var i = 0; i < models.length; i++) {
+      var m = models[i];
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + esc(m.model) + '</td>' +
+        '<td class="num">' + fmtNum(m.requests) + '</td>' +
+        '<td class="num">' + fmtNum(m.stream_requests) + '</td>' +
+        '<td class="num">' + fmtNum(m.nonstream_requests) + '</td>' +
+        '<td class="num">' + fmtNum(m.success) + '</td>' +
+        '<td class="num">' + fmtNum(m.failed) + '</td>' +
+        '<td class="num">' + fmtNum(m.input_tokens) + '</td>' +
+        '<td class="num">' + fmtNum(m.output_tokens) + '</td>' +
+        '<td class="num">' + fmtBytes(m.response_bytes) + '</td>' +
+        '<td class="num">' + fmtMs(m.avg_latency_ms) + '</td>' +
+        '<td class="num">' + fmtMs(m.min_latency_ms) + '</td>' +
+        '<td class="num">' + fmtMs(m.max_latency_ms) + '</td>';
+      tbody.appendChild(tr);
+    }
+  }
+
+  // 时间窗口图表
+  var windows = data.windows || [];
+  if (!windows.length) {
+    $('statsChartWrap').innerHTML = '<div class="stats-empty">暂无时间分布数据</div>';
+  } else {
+    var maxVal = 0;
+    for (var i = 0; i < windows.length; i++) {
+      if (windows[i].requests > maxVal) maxVal = windows[i].requests;
+    }
+    var barsHtml = '';
+    for (var i = 0; i < windows.length; i++) {
+      var w = windows[i];
+      var pct = maxVal ? (w.requests / maxVal * 100) : 0;
+      var height = Math.max(pct, 4);
+      barsHtml += '<div class="bar" style="height:' + height + '%">' +
+        '<span class="bar-val">' + (w.requests || 0) + '</span>' +
+        '<span class="bar-label">' + esc(w.hour || '') + '</span>' +
+        '</div>';
+    }
+    $('statsChartWrap').innerHTML = '<div class="chart-bar">' + barsHtml + '</div>';
+  }
+}
+
+async function resetStats() {
+  if (!confirm('确定要重置所有统计数据？此操作不可恢复。')) return;
+  try {
+    var r = await fetch('/admin/api/stats/reset', { method: 'POST', headers: apiHeaders() });
+    if (!r.ok) { var t = await r.text(); toast('重置失败: ' + t, true); return; }
+    toast('✅ 统计已重置');
+    loadStats();
+  } catch (e) {
+    toast('重置失败: ' + (e.message || String(e)), true);
+  }
+}
 
 // ── 启动 ──
 init();
