@@ -346,6 +346,11 @@ static void handle_messages(struct evhttp_request *req) {
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
     job->stream = stream;
     job->stream_state.client_model = xstrdup(job->client_model);
+    /* 估算 input_tokens：基于请求体长度（每 4 字节 ≈ 1 token），
+       流式请求若上游不返回 usage.prompt_tokens 时作为兜底 */
+    if (oai_body) {
+        job->stream_state.prompt_tokens = (long)(strlen(oai_body) / 4);
+    }
     clock_gettime(CLOCK_MONOTONIC, &job->start_time);
     stats_request_begin(job->upstream_model, job->provider_name, stream, body ? strlen(body) : 0);
     evhttp_request_own(req);

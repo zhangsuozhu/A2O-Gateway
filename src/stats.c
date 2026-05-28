@@ -279,7 +279,10 @@ static cJSON *window_to_json(const time_window_t *window) {
 
 cJSON *stats_get_json(void) {
     pthread_mutex_lock(&G_STATS.lock);
-    
+
+    /* 查询前先推进滑动窗口，确保旧数据被清掉 */
+    sliding_tick();
+
     cJSON *root = cJSON_CreateObject();
     cJSON_AddNumberToObject(root, "start_time", (double)G_STATS.start_time);
     cJSON_AddNumberToObject(root, "uptime_seconds", (double)(time(NULL) - G_STATS.start_time));
