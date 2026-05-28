@@ -185,11 +185,11 @@
                 <th class="num">非流式</th>
                 <th class="num">成功</th>
                 <th class="num">失败</th>
-                <th class="num">Input</th>
-                <th class="num">Output</th>
+                <th class="num">输入tokens</th>
+                <th class="num">输出tokens</th>
                 <th class="num">流量</th>
-                <th class="num">输入速度</th>
-                <th class="num">输出速度</th>
+                <th class="num">输入tokens/s</th>
+                <th class="num">输出tokens/s</th>
                 <th class="num">平均延迟</th>
                 <th class="num">最小</th>
                 <th class="num">最大</th>
@@ -723,6 +723,14 @@ function fmtPct(a, b) {
   if (!b) return '0%';
   return ((a / b) * 100).toFixed(1) + '%';
 }
+function fmtSpeed(v) {
+  if (v == null || isNaN(v) || v <= 0) return '-';
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + ' GB/s';
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + ' MB/s';
+  if (v >= 1e4) return (v / 1e3).toFixed(1) + ' K/s';
+  if (v >= 1e3) return (v / 1e3).toFixed(2) + ' K/s';
+  return v.toFixed(1) + '/s';
+}
 
 async function loadStats() {
   try {
@@ -749,7 +757,7 @@ function renderStatsError(msg) {
   $('statAvgLatency').textContent = '!';
   $('statTrafficSpeed').textContent = '!';
   // 模型表格显示错误行
-  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">输入速度</th><th class="num">输出速度</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="15" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">输入tokens/s</th><th class="num">输出tokens/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="15" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
   $('statsChartWrap').innerHTML = '<div class="stats-empty">' + esc(msg) + '</div>';
 }
 
@@ -767,7 +775,7 @@ function renderStats(data) {
   $('statTrafficSpeed').textContent = fmtSpeed(g.traffic_speed);
 
   // 模型统计 - 先确保表格结构存在
-  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">输入速度</th><th class="num">输出速度</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">输入tokens/s</th><th class="num">输出tokens/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table>';
   var tbody = $('statsModelsBody');
   tbody.innerHTML = '';
   var models = data.models || [];
