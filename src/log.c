@@ -372,6 +372,14 @@ static void extract_text_from_json(cJSON *j, membuf_t *out, const char *label) {
                     membuf_append(out, txt, strlen(txt));
                     membuf_append(out, "\n", 1);
                 }
+            } else if (type && strcmp(type, "thinking") == 0) {
+                const char *think = json_get_str(blk, "thinking");
+                if (think) {
+                    membuf_append(out, label, strlen(label));
+                    membuf_append(out, "[thinking]\n", 11);
+                    membuf_append(out, think, strlen(think));
+                    membuf_append(out, "\n", 1);
+                }
             }
         }
     }
