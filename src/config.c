@@ -100,7 +100,6 @@ static cJSON *default_config(void) {
         "\"log_level\":\"info\","
         "\"realtime_print\":\"false\","
         "\"gateway_api_key\":\"cc-local-token\","
-        "\"admin_token\":\"admin-local-token\","
         "\"admin_password\":\"topwalk\","
         "\"worker_threads\":4,"
         "\"active_model\":\"qwen-coder\","
@@ -328,6 +327,7 @@ int config_replace_from_json(const char *body, char **err) {
     }
     pthread_rwlock_wrlock(&G.lock);
     preserve_masked_keys(newroot, G.root);
+    cJSON_DeleteItemFromObjectCaseSensitive(newroot, "admin_token");
     char *txt = cJSON_Print(newroot);
     if (write_file_atomic(G.path, txt) != 0) {
         pthread_rwlock_unlock(&G.lock);

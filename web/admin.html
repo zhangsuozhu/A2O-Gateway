@@ -137,6 +137,21 @@
         <div class="row">
           <div><label>监听端口</label><input id="port" type="number" /></div>
           <div><label>Gateway API Key</label><input id="gwKey" placeholder="Claude Code 用此 token 连接" /></div>
+          <div><label>实时打印</label>
+            <select id="realtimePrint">
+              <option value="false">关闭</option>
+              <option value="all">完整 JSON</option>
+              <option value="txt">仅文本</option>
+            </select>
+          </div>
+          <div><label>日志级别</label>
+            <select id="logLevel">
+              <option value="debug">debug</option>
+              <option value="info">info</option>
+              <option value="warn">warn</option>
+              <option value="error">error</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -370,6 +385,8 @@ function render() {
   cfg.models = cfg.models || [];
   $('port').value = cfg.listen_port || 8080;
   $('gwKey').value = cfg.gateway_api_key || '';
+  $('realtimePrint').value = cfg.realtime_print || 'false';
+  $('logLevel').value = cfg.log_level || 'info';
   $('saveBtn').style.display = '';
   $('addBtn').style.display = '';
   $('envBtn').style.display = '';
@@ -494,6 +511,8 @@ function collect() {
   if (!cfg) return;
   cfg.listen_port = Number($('port').value) || 8080;
   cfg.gateway_api_key = $('gwKey').value;
+  cfg.realtime_print = $('realtimePrint').value;
+  cfg.log_level = $('logLevel').value;
   var arr = [];
   var cards = document.querySelectorAll('.mc');
   for (var i = 0; i < cards.length; i++) {

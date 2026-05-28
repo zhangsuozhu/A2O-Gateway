@@ -142,15 +142,12 @@ static bool auth_ok(struct evhttp_request *req, const char *required) {
  * @param req 当前 HTTP 请求
  * @return 认证通过返回 true
  *
- * 优先检查会话令牌（x-session-token），然后回退到配置中的 admin_token。
+ * 检查 x-session-token 会话令牌是否有效。
  */
 static bool admin_auth_ok(struct evhttp_request *req) {
     const char *token = header_get(req, "x-session-token");
     if (session_valid(token)) return true;
-    char *k = config_get_string_copy("admin_token");
-    bool ok = auth_ok(req, k);
-    free(k);
-    return ok;
+    return false;
 }
 
 /**
