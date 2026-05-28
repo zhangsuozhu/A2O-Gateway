@@ -219,7 +219,7 @@ cJSON *anthropic_tool_choice_to_openai(cJSON *tc) {
  *           * 转换文本内容
  *           * 识别 tool_use 块，生成 tool_calls 数组（含 id、name、arguments）
  */
-cJSON *convert_message_content_blocks(cJSON *openai_messages, const char *role, cJSON *content) {
+cJSON *convert_message_content_blocks(cJSON *openai_messages, const char *role, cJSON *content, const char *reasoning_content) {
     if (strcmp(role, "user") == 0 && cJSON_IsArray(content)) {
         cJSON *text_blocks = cJSON_CreateArray();
         cJSON *blk;
@@ -281,6 +281,10 @@ cJSON *convert_message_content_blocks(cJSON *openai_messages, const char *role, 
         if (cJSON_GetArraySize(calls) > 0) cJSON_AddItemToObject(msg, "tool_calls", calls);
         else cJSON_Delete(calls);
     }
+    /* 透传 DeepSeek reasoning_content */
+    if (reasoning_content && *reasoning_content) {
+        cJSON_AddStringToObject(msg, "reasoning_content", reasoning_content);
+    }
     cJSON_AddItemToArray(openai_messages, msg);
     return openai_messages;
 }
@@ -321,7 +325,8 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
             const char *role = json_get_str(m, "role");
             cJSON *content = cJSON_GetObjectItemCaseSensitive(m, "content");
             if (!role || !content) continue;
-            convert_message_content_blocks(messages, role, content);
+            const char *rc = json_get_str(m, "reasoning_content");
+            convert_message_content_blocks(messages, role, content, rc);
         }
     }
     cJSON_AddItemToObject(out, "messages", messages);
@@ -514,6 +519,9 @@ cJSON *convert_openai_response_to_anthropic(const char *body, const char *client
     cJSON_AddItemToObject(out, "content", msg ? openai_message_to_anthropic_content(msg) : cJSON_CreateArray());
     cJSON_AddStringToObject(out, "stop_reason", map_finish_reason(fr));
     cJSON_AddNullToObject(out, "stop_sequence");
+    /* 透传 DeepSeek 的 reasoning_content，供客户端在后续请求中传回 */
+    const char *rc = msg ? json_get_str(msg, "reasoning_content") : NULL;
+    if (rc && *rc) cJSON_AddStringToObject(out, "reasoning_content", rc);
     cJSON *usage = cJSON_CreateObject();
     cJSON *u = cJSON_GetObjectItemCaseSensitive(oai, "usage");
     cJSON_AddNumberToObject(usage, "input_tokens", json_get_long(u, "prompt_tokens", 0));

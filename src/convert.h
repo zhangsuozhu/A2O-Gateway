@@ -69,7 +69,7 @@ cJSON *anthropic_tool_choice_to_openai(cJSON *tc);
  * @return 返回更新后的 openai_messages 数组
  * @note 特殊处理 user 消息的 tool_result 块，将其拆分为独立的 tool 角色消息
  */
-cJSON *convert_message_content_blocks(cJSON *messages, const char *role, cJSON *content);
+cJSON *convert_message_content_blocks(cJSON *messages, const char *role, cJSON *content, const char *reasoning_content);
 
 /**
  * @brief 将完整的 Anthropic 请求转换为 OpenAI 请求
