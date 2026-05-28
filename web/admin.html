@@ -168,6 +168,7 @@
           <div class="stat-card"><div class="label">总 Tokens</div><div class="value" id="statTotalTokens">-</div></div>
           <div class="stat-card"><div class="label">总流量</div><div class="value" id="statTotalTraffic">-</div></div>
           <div class="stat-card"><div class="label">平均延迟</div><div class="value" id="statAvgLatency">-</div></div>
+          <div class="stat-card"><div class="label">流量速度</div><div class="value" id="statTrafficSpeed">-</div></div>
         </div>
       </div>
 
@@ -187,6 +188,8 @@
                 <th class="num">Input</th>
                 <th class="num">Output</th>
                 <th class="num">流量</th>
+                <th class="num">输入速度</th>
+                <th class="num">输出速度</th>
                 <th class="num">平均延迟</th>
                 <th class="num">最小</th>
                 <th class="num">最大</th>
@@ -744,8 +747,9 @@ function renderStatsError(msg) {
   $('statTotalTokens').textContent = '!';
   $('statTotalTraffic').textContent = '!';
   $('statAvgLatency').textContent = '!';
+  $('statTrafficSpeed').textContent = '!';
   // 模型表格显示错误行
-  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="13" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">输入速度</th><th class="num">输出速度</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="15" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
   $('statsChartWrap').innerHTML = '<div class="stats-empty">' + esc(msg) + '</div>';
 }
 
@@ -760,14 +764,15 @@ function renderStats(data) {
   $('statTotalTokens').textContent = fmtNum((g.total_input_tokens || 0) + (g.total_output_tokens || 0));
   $('statTotalTraffic').textContent = fmtBytes(g.total_bytes);
   $('statAvgLatency').textContent = fmtMs(g.avg_latency_ms);
+  $('statTrafficSpeed').textContent = fmtSpeed(g.traffic_speed);
 
   // 模型统计 - 先确保表格结构存在
-  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">输入速度</th><th class="num">输出速度</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table>';
   var tbody = $('statsModelsBody');
   tbody.innerHTML = '';
   var models = data.models || [];
   if (!models.length) {
-    tbody.innerHTML = '<tr><td colspan="13" class="stats-empty">暂无模型统计数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" class="stats-empty">暂无模型统计数据</td></tr>';
   } else {
     for (var i = 0; i < models.length; i++) {
       var m = models[i];
@@ -783,6 +788,8 @@ function renderStats(data) {
         '<td class="num">' + fmtNum(m.input_tokens) + '</td>' +
         '<td class="num">' + fmtNum(m.output_tokens) + '</td>' +
         '<td class="num">' + fmtBytes(m.response_bytes) + '</td>' +
+        '<td class="num">' + fmtSpeed(m.input_token_speed) + '</td>' +
+        '<td class="num">' + fmtSpeed(m.output_token_speed) + '</td>' +
         '<td class="num">' + fmtMs(m.avg_latency_ms) + '</td>' +
         '<td class="num">' + fmtMs(m.min_latency_ms) + '</td>' +
         '<td class="num">' + fmtMs(m.max_latency_ms) + '</td>';

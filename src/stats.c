@@ -163,7 +163,7 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
     pthread_mutex_unlock(&G_STATS.lock);
 }
 
-static cJSON *model_entry_to_json(const model_stat_entry_t *entry) {
+static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double uptime) {
     cJSON *obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "model", entry->model_name);
     cJSON_AddStringToObject(obj, "provider", entry->provider);
@@ -188,6 +188,12 @@ static cJSON *model_entry_to_json(const model_stat_entry_t *entry) {
     cJSON_AddNumberToObject(obj, "curl_errors", (double)entry->curl_errors);
     cJSON_AddNumberToObject(obj, "first_seen", (double)entry->first_seen);
     cJSON_AddNumberToObject(obj, "last_seen", (double)entry->last_seen);
+
+    /* 每个模型的 token 速度 (tokens/s) */
+    cJSON_AddNumberToObject(obj, "input_token_speed", uptime > 0 ? (double)entry->input_tokens / uptime : 0.0);
+    cJSON_AddNumberToObject(obj, "output_token_speed", uptime > 0 ? (double)entry->output_tokens / uptime : 0.0);
+    cJSON_AddNumberToObject(obj, "traffic_speed", uptime > 0 ? (double)(entry->total_request_bytes + entry->total_response_bytes) / uptime : 0.0);
+
     return obj;
 }
 
@@ -239,6 +245,14 @@ cJSON *stats_get_json(void) {
     cJSON_AddNumberToObject(overview, "avg_latency_ms", avg_latency);
     cJSON_AddNumberToObject(overview, "min_latency_ms", G_STATS.min_latency_ms >= 0 ? G_STATS.min_latency_ms : 0.0);
     cJSON_AddNumberToObject(overview, "max_latency_ms", G_STATS.max_latency_ms);
+
+    /* 速度统计 */
+    double uptime = (double)(time(NULL) - G_STATS.start_time);
+    if (uptime < 1.0) uptime = 1.0;
+    cJSON_AddNumberToObject(overview, "input_token_speed", (double)G_STATS.total_input_tokens / uptime);
+    cJSON_AddNumberToObject(overview, "output_token_speed", (double)G_STATS.total_output_tokens / uptime);
+    cJSON_AddNumberToObject(overview, "traffic_speed", (double)(G_STATS.total_request_bytes + G_STATS.total_response_bytes) / uptime);
+
     cJSON_AddNumberToObject(overview, "http_4xx", (double)G_STATS.http_4xx_count);
     cJSON_AddNumberToObject(overview, "http_5xx", (double)G_STATS.http_5xx_count);
     cJSON_AddNumberToObject(overview, "curl_errors", (double)G_STATS.curl_error_count);
@@ -247,7 +261,7 @@ cJSON *stats_get_json(void) {
     /* 模型统计 */
     cJSON *models = cJSON_CreateArray();
     for (int i = 0; i < G_STATS.model_count; i++) {
-        cJSON_AddItemToArray(models, model_entry_to_json(&G_STATS.models[i]));
+        cJSON_AddItemToArray(models, model_entry_to_json(&G_STATS.models[i], uptime));
     }
     cJSON_AddItemToObject(root, "models", models);
     
