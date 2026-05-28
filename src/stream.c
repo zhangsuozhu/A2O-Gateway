@@ -416,6 +416,10 @@ void stream_finish(gateway_job_t *job) {
     cJSON *usage = cJSON_CreateObject();
     cJSON_AddNumberToObject(usage, "output_tokens", s->completion_tokens > 0 ? s->completion_tokens : 0);
     cJSON_AddItemToObject(delta_ev, "usage", usage);
+    /* 透传 DeepSeek reasoning_content，供客户端后续请求传回 */
+    if (s->reasoning_content && *s->reasoning_content) {
+        cJSON_AddStringToObject(delta_ev, "reasoning_content", s->reasoning_content);
+    }
     stream_emit_json(job, "message_delta", delta_ev);
     cJSON_Delete(delta_ev);
 
@@ -465,6 +469,7 @@ void stream_state_free(stream_state_t *s) {
     free(s->finish_reason);
     free(s->response_text);
     free(s->text_pending);
+    free(s->reasoning_content);
     for (int i = 0; i < MAX_TOOL_STREAMS; i++) {
         free(s->tools[i].id);
         free(s->tools[i].name);
@@ -512,6 +517,18 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
     if (cJSON_IsObject(delta)) {
         const char *content = json_get_str(delta, "content");
         if (content) stream_text_delta(job, content);
+        /* 累积 DeepSeek 流式 reasoning_content */
+        const char *rc = json_get_str(delta, "reasoning_content");
+        if (rc && *rc) {
+            stream_state_t *s = &job->stream_state;
+            size_t old_len = s->reasoning_content ? strlen(s->reasoning_content) : 0;
+            size_t add_len = strlen(rc);
+            char *new_rc = (char *)realloc(s->reasoning_content, old_len + add_len + 1);
+            if (new_rc) {
+                s->reasoning_content = new_rc;
+                memcpy(s->reasoning_content + old_len, rc, add_len + 1);
+            }
+        }
         cJSON *tool_calls = cJSON_GetObjectItemCaseSensitive(delta, "tool_calls");
         if (cJSON_IsArray(tool_calls)) {
             cJSON *tc;
