@@ -16,6 +16,7 @@
 
 typedef struct model_stat_entry {
     char model_name[64];
+    char provider[64];
     uint64_t requests;
     uint64_t stream_requests;
     uint64_t nonstream_requests;
@@ -89,10 +90,10 @@ typedef struct gateway_stats {
 void stats_init(void);
 
 /* 请求开始 */
-void stats_request_begin(const char *model, bool stream, size_t request_bytes);
+void stats_request_begin(const char *model, const char *provider, bool stream, size_t request_bytes);
 
 /* 请求结束 */
-void stats_request_end(const char *model, bool stream, int http_status, 
+void stats_request_end(const char *model, const char *provider, bool stream, int http_status,
                        CURLcode curl_code, size_t response_bytes,
                        long input_tokens, long output_tokens,
                        double latency_ms);

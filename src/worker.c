@@ -166,7 +166,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     struct timespec end_time;
     clock_gettime(CLOCK_MONOTONIC, &end_time);
     double latency_ms = (end_time.tv_sec - job->start_time.tv_sec) * 1000.0 + (end_time.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
-    stats_request_end(job->client_model, false, code_out == 200 ? 200 : (job->upstream_status > 0 ? (int)job->upstream_status : 502), 
+    stats_request_end(job->client_model, job->provider_name, false, code_out == 200 ? 200 : (job->upstream_status > 0 ? (int)job->upstream_status : 502),
                       rc, job->upstream_body.len, input_tokens, output_tokens, latency_ms);
 }
 
@@ -210,7 +210,7 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
                         (end_time.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
     int http_status = (rc == CURLE_OK && job->upstream_status < 400) ? 200 :
                       (job->upstream_status > 0 ? (int)job->upstream_status : 502);
-    stats_request_end(job->client_model, true, http_status, rc,
+    stats_request_end(job->client_model, job->provider_name, true, http_status, rc,
                       job->upstream_body.len,
                       job->stream_state.prompt_tokens, job->stream_state.completion_tokens, latency_ms);
     job->stream_state.stats_recorded = true;

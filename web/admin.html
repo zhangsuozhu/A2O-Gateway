@@ -178,6 +178,7 @@
             <thead>
               <tr>
                 <th>模型</th>
+                <th>厂商</th>
                 <th class="num">请求数</th>
                 <th class="num">流式</th>
                 <th class="num">非流式</th>
@@ -744,7 +745,7 @@ function renderStatsError(msg) {
   $('statTotalTraffic').textContent = '!';
   $('statAvgLatency').textContent = '!';
   // 模型表格显示错误行
-  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="12" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="13" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
   $('statsChartWrap').innerHTML = '<div class="stats-empty">' + esc(msg) + '</div>';
 }
 
@@ -761,18 +762,19 @@ function renderStats(data) {
   $('statAvgLatency').textContent = fmtMs(g.avg_latency_ms);
 
   // 模型统计 - 先确保表格结构存在
-  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">Input</th><th class="num">Output</th><th class="num">流量</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table>';
   var tbody = $('statsModelsBody');
   tbody.innerHTML = '';
   var models = data.models || [];
   if (!models.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="stats-empty">暂无模型统计数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="stats-empty">暂无模型统计数据</td></tr>';
   } else {
     for (var i = 0; i < models.length; i++) {
       var m = models[i];
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + esc(m.model) + '</td>' +
+        '<td>' + esc(m.provider || '-') + '</td>' +
         '<td class="num">' + fmtNum(m.requests) + '</td>' +
         '<td class="num">' + fmtNum(m.stream_requests) + '</td>' +
         '<td class="num">' + fmtNum(m.nonstream_requests) + '</td>' +

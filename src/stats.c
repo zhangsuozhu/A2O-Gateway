@@ -5,24 +5,28 @@
 
 static gateway_stats_t G_STATS;
 
-/* 获取或创建模型统计条目 */
-static model_stat_entry_t *get_model_entry(const char *model) {
+/* 获取或创建模型统计条目，按 provider/model 组合作为唯一 key */
+static model_stat_entry_t *get_model_entry(const char *model, const char *provider) {
     if (!model || !*model) model = "unknown";
-    
+    if (!provider || !*provider) provider = "unknown";
+
     for (int i = 0; i < G_STATS.model_count; i++) {
-        if (strcmp(G_STATS.models[i].model_name, model) == 0) {
+        if (strcmp(G_STATS.models[i].model_name, model) == 0 &&
+            strcmp(G_STATS.models[i].provider, provider) == 0) {
             return &G_STATS.models[i];
         }
     }
-    
+
     if (G_STATS.model_count >= MAX_MODEL_STATS) {
         return &G_STATS.models[MAX_MODEL_STATS - 1];
     }
-    
+
     model_stat_entry_t *entry = &G_STATS.models[G_STATS.model_count++];
     memset(entry, 0, sizeof(*entry));
     strncpy(entry->model_name, model, sizeof(entry->model_name) - 1);
     entry->model_name[sizeof(entry->model_name) - 1] = 0;
+    strncpy(entry->provider, provider, sizeof(entry->provider) - 1);
+    entry->provider[sizeof(entry->provider) - 1] = 0;
     entry->min_latency_ms = -1.0;
     entry->first_seen = time(NULL);
     return entry;
@@ -61,41 +65,41 @@ void stats_init(void) {
     G_STATS.min_latency_ms = -1.0;
 }
 
-void stats_request_begin(const char *model, bool stream, size_t request_bytes) {
+void stats_request_begin(const char *model, const char *provider, bool stream, size_t request_bytes) {
     pthread_mutex_lock(&G_STATS.lock);
-    
+
     G_STATS.total_requests++;
     G_STATS.active_requests++;
     if (G_STATS.active_requests > G_STATS.peak_active_requests) {
         G_STATS.peak_active_requests = G_STATS.active_requests;
     }
-    
+
     if (stream) G_STATS.stream_requests++;
     else G_STATS.nonstream_requests++;
-    
+
     G_STATS.total_request_bytes += request_bytes;
-    
-    model_stat_entry_t *entry = get_model_entry(model);
+
+    model_stat_entry_t *entry = get_model_entry(model, provider);
     entry->requests++;
     entry->last_seen = time(NULL);
     if (stream) entry->stream_requests++;
     else entry->nonstream_requests++;
     entry->total_request_bytes += request_bytes;
-    
+
     pthread_mutex_unlock(&G_STATS.lock);
 }
 
-void stats_request_end(const char *model, bool stream, int http_status,
+void stats_request_end(const char *model, const char *provider, bool stream, int http_status,
                        CURLcode curl_code, size_t response_bytes,
                        long input_tokens, long output_tokens,
                        double latency_ms) {
     pthread_mutex_lock(&G_STATS.lock);
-    
+
     G_STATS.active_requests--;
     G_STATS.total_response_bytes += response_bytes;
-    
+
     bool success = (curl_code == CURLE_OK && http_status >= 200 && http_status < 300);
-    
+
     if (success) {
         G_STATS.total_success++;
     } else {
@@ -104,10 +108,10 @@ void stats_request_end(const char *model, bool stream, int http_status,
         if (http_status >= 500) G_STATS.http_5xx_count++;
         if (curl_code != CURLE_OK) G_STATS.curl_error_count++;
     }
-    
+
     if (input_tokens > 0) G_STATS.total_input_tokens += (uint64_t)input_tokens;
     if (output_tokens > 0) G_STATS.total_output_tokens += (uint64_t)output_tokens;
-    
+
     /* 延迟统计 */
     if (latency_ms > 0) {
         G_STATS.total_latency_ms += latency_ms;
@@ -119,12 +123,12 @@ void stats_request_end(const char *model, bool stream, int http_status,
             G_STATS.max_latency_ms = latency_ms;
         }
     }
-    
+
     /* 模型统计 */
-    model_stat_entry_t *entry = get_model_entry(model);
+    model_stat_entry_t *entry = get_model_entry(model, provider);
     entry->total_response_bytes += response_bytes;
     entry->last_seen = time(NULL);
-    
+
     if (success) {
         entry->success++;
     } else {
@@ -133,10 +137,10 @@ void stats_request_end(const char *model, bool stream, int http_status,
         if (http_status >= 500) entry->http_5xx++;
         if (curl_code != CURLE_OK) entry->curl_errors++;
     }
-    
+
     if (input_tokens > 0) entry->input_tokens += (uint64_t)input_tokens;
     if (output_tokens > 0) entry->output_tokens += (uint64_t)output_tokens;
-    
+
     if (latency_ms > 0) {
         entry->total_latency_ms += latency_ms;
         entry->latency_count++;
@@ -147,7 +151,7 @@ void stats_request_end(const char *model, bool stream, int http_status,
             entry->max_latency_ms = latency_ms;
         }
     }
-    
+
     /* 时间窗口 */
     time_window_t *window = get_current_window();
     window->requests++;
@@ -155,13 +159,14 @@ void stats_request_end(const char *model, bool stream, int http_status,
     if (output_tokens > 0) window->output_tokens += (uint64_t)output_tokens;
     if (success) window->success++;
     else window->failed++;
-    
+
     pthread_mutex_unlock(&G_STATS.lock);
 }
 
 static cJSON *model_entry_to_json(const model_stat_entry_t *entry) {
     cJSON *obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "model", entry->model_name);
+    cJSON_AddStringToObject(obj, "provider", entry->provider);
     cJSON_AddNumberToObject(obj, "requests", (double)entry->requests);
     cJSON_AddNumberToObject(obj, "stream_requests", (double)entry->stream_requests);
     cJSON_AddNumberToObject(obj, "nonstream_requests", (double)entry->nonstream_requests);

@@ -24,6 +24,17 @@ sudo apt-get install -y build-essential cmake pkg-config \
   libevent-dev libcurl4-openssl-dev libcjson-dev ca-certificates
 ```
 
+### Dependencies (macOS)
+```bash
+brew install cmake pkg-config libevent curl cjson
+```
+
+### Run with env var (alternative to CLI arg)
+```bash
+export GATEWAY_CONFIG="./config/gateway.local.json"
+./build/cc-oai-gateway
+```
+
 ### Test Commands (when gateway is running)
 ```bash
 # Health check
@@ -79,6 +90,7 @@ Claude Code → HTTP POST /v1/messages (Anthropic format)
 | `convert.h/c` | Bidirectional protocol conversion (Anthropic ↔ OpenAI), URL construction |
 | `stream.h/c` | SSE streaming parser, chunk-by-chunk conversion, client response streaming |
 | `worker.h/c` | libcurl multi worker thread pool, job queue, CURL easy handle lifecycle |
+| `stats.h/c` | Request statistics: per-model breakdown, time windows, latency tracking |
 | `handlers.h/c` | HTTP route dispatch: /v1/messages, /v1/messages/count_tokens, /healthz, /admin, etc. |
 | `web/admin.html` | Single-file Web UI for config management (served at /admin) |
 
@@ -112,8 +124,17 @@ Claude Code → HTTP POST /v1/messages (Anthropic format)
 | POST | /v1/messages | handle_messages | gateway_api_key |
 | POST | /v1/messages/count_tokens | handle_count_tokens | gateway_api_key |
 | GET | /v1/models | handle_models | gateway_api_key |
-| GET/POST | /admin* | handle_admin | admin_token |
+| GET | /admin | Web UI (single-file HTML) | session (admin_password login) |
+| POST | /admin/api/login | login | admin_password |
+| POST | /admin/api/logout | logout | session |
+| GET | /admin/api/config | get config | session |
+| PUT/POST | /admin/api/config | update config | session |
+| POST | /admin/api/switch | switch default model | session |
+| POST | /admin/api/change-password | change admin password | session + old_password |
+| GET | /admin/api/stats | get request statistics | session |
+| POST | /admin/api/stats/reset | reset statistics | session |
 | GET | /healthz | handle_healthz | none |
+| GET | /readyz | handle_healthz | none |
 
 ## Common Tasks
 
