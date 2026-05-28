@@ -192,6 +192,13 @@ typedef struct stream_state {
     /* 推理内容（如 DeepSeek-R1 的 reasoning_content） */
     char *reasoning_content; /**< 模型思考过程的原始文本内容 */
 
+    /* thinking content block 流式状态 */
+    int thinking_block_index; /**< thinking 块在 content blocks 中的下标 */
+    bool thinking_started;    /**< 标记是否已开始发送 thinking content block */
+    char *thinking_pending;   /**< 待发送 thinking 的临时缓冲区 */
+    size_t thinking_pending_len;
+    size_t thinking_pending_cap;
+
     /* 工具流状态数组：并行跟踪多个工具调用 */
     tool_stream_state_t tools[MAX_TOOL_STREAMS];
 

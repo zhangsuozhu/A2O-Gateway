@@ -398,6 +398,13 @@ void stream_finish(gateway_job_t *job) {
         stream_emit_json(job, "content_block_stop", data);
         cJSON_Delete(data);
     }
+    if (s->thinking_started) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddStringToObject(data, "type", "content_block_stop");
+        cJSON_AddNumberToObject(data, "index", s->thinking_block_index);
+        stream_emit_json(job, "content_block_stop", data);
+        cJSON_Delete(data);
+    }
     for (int i = 0; i < MAX_TOOL_STREAMS; i++) {
         if (s->tools[i].started) {
             cJSON *data = cJSON_CreateObject();
@@ -416,10 +423,6 @@ void stream_finish(gateway_job_t *job) {
     cJSON *usage = cJSON_CreateObject();
     cJSON_AddNumberToObject(usage, "output_tokens", s->completion_tokens > 0 ? s->completion_tokens : 0);
     cJSON_AddItemToObject(delta_ev, "usage", usage);
-    /* 透传 DeepSeek reasoning_content，供客户端后续请求传回 */
-    if (s->reasoning_content && *s->reasoning_content) {
-        cJSON_AddStringToObject(delta_ev, "reasoning_content", s->reasoning_content);
-    }
     stream_emit_json(job, "message_delta", delta_ev);
     cJSON_Delete(delta_ev);
 
@@ -470,10 +473,82 @@ void stream_state_free(stream_state_t *s) {
     free(s->response_text);
     free(s->text_pending);
     free(s->reasoning_content);
+    free(s->thinking_pending);
     for (int i = 0; i < MAX_TOOL_STREAMS; i++) {
         free(s->tools[i].id);
         free(s->tools[i].name);
     }
+}
+
+/* 发送 thinking 内容块开始事件
+ *
+ * 构造 content_block_start 事件，标记新的 thinking 块：
+ * {
+ *   "type": "content_block_start",
+ *   "index": <block_index>,
+ *   "content_block": {
+ *     "type": "thinking",
+ *     "thinking": ""
+ *   }
+ * }
+ *
+ * 分配递增的 block_index（通过 next_block_index）
+ * 确保只发送一次（通过 thinking_started 标志）
+ */
+static void stream_thinking_start(gateway_job_t *job) {
+    stream_state_t *s = &job->stream_state;
+    stream_start_reply(job);
+    stream_message_start(job);
+    if (s->thinking_started) return;
+    s->thinking_block_index = s->next_block_index++;
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "type", "content_block_start");
+    cJSON_AddNumberToObject(data, "index", s->thinking_block_index);
+    cJSON *blk = cJSON_CreateObject();
+    cJSON_AddStringToObject(blk, "type", "thinking");
+    cJSON_AddStringToObject(blk, "thinking", "");
+    cJSON_AddItemToObject(data, "content_block", blk);
+    stream_emit_json(job, "content_block_start", data);
+    cJSON_Delete(data);
+    s->thinking_started = true;
+}
+
+/* 累积 reasoning_content 到 thinking_pending 缓冲区（带阈值刷新）
+ * 
+ * 功能：减少 SSE 事件数量，避免每个 reasoning_content delta 都触发网络写
+ * - 初始容量 8192 字节，按 2 倍扩容
+ * - 达到 THINKING_FLUSH_THRESHOLD（4096）时发送 thinking_delta
+ */
+static void accum_thinking(stream_state_t *s, const char *text) {
+    size_t len = strlen(text);
+    if (s->thinking_pending_len + len + 1 > s->thinking_pending_cap) {
+        size_t nc = s->thinking_pending_cap ? s->thinking_pending_cap * 2 : 8192;
+        while (nc < s->thinking_pending_len + len + 1) nc *= 2;
+        char *p = (char *)realloc(s->thinking_pending, nc);
+        if (!p) return;
+        s->thinking_pending = p;
+        s->thinking_pending_cap = nc;
+    }
+    memcpy(s->thinking_pending + s->thinking_pending_len, text, len + 1);
+    s->thinking_pending_len += len;
+}
+
+/* 刷新 thinking_pending 缓冲区并发送 content_block_delta */
+static void stream_flush_thinking(gateway_job_t *job) {
+    stream_state_t *s = &job->stream_state;
+    if (!s->thinking_pending || s->thinking_pending_len == 0) return;
+    stream_thinking_start(job);
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "type", "content_block_delta");
+    cJSON_AddNumberToObject(data, "index", s->thinking_block_index);
+    cJSON *delta = cJSON_CreateObject();
+    cJSON_AddStringToObject(delta, "type", "thinking_delta");
+    cJSON_AddStringToObject(delta, "thinking", s->thinking_pending);
+    cJSON_AddItemToObject(data, "delta", delta);
+    stream_emit_json(job, "content_block_delta", data);
+    cJSON_Delete(data);
+    s->thinking_pending[0] = 0;
+    s->thinking_pending_len = 0;
 }
 
 /* 解析 OpenAI 流式响应 JSON
@@ -485,7 +560,8 @@ void stream_state_free(stream_state_t *s) {
  * 1. usage：token 使用量（prompt_tokens, completion_tokens）
  * 2. choices[0].finish_reason：完成原因
  * 3. choices[0].delta.content：文本增量 -> stream_text_delta
- * 4. choices[0].delta.tool_calls：工具调用
+ * 4. choices[0].delta.reasoning_content：thinking 增量 -> stream_thinking_delta
+ * 5. choices[0].delta.tool_calls：工具调用
  *    - index：工具调用索引（可能多个工具并行）
  *    - id：工具调用 ID
  *    - function.name：工具名称
@@ -517,7 +593,7 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
     if (cJSON_IsObject(delta)) {
         const char *content = json_get_str(delta, "content");
         if (content) stream_text_delta(job, content);
-        /* 累积 DeepSeek 流式 reasoning_content */
+        /* 累积并流式转发 DeepSeek reasoning_content */
         const char *rc = json_get_str(delta, "reasoning_content");
         if (rc && *rc) {
             stream_state_t *s = &job->stream_state;
@@ -527,6 +603,11 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
             if (new_rc) {
                 s->reasoning_content = new_rc;
                 memcpy(s->reasoning_content + old_len, rc, add_len + 1);
+            }
+            /* 缓冲 thinking delta，达到阈值时批量发送，减少 SSE 事件数 */
+            accum_thinking(s, rc);
+            if (s->thinking_pending_len >= TEXT_FLUSH_THRESHOLD) {
+                stream_flush_thinking(job);
             }
         }
         cJSON *tool_calls = cJSON_GetObjectItemCaseSensitive(delta, "tool_calls");

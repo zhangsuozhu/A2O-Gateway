@@ -452,6 +452,15 @@ const char *map_finish_reason(const char *fr) {
  */
 cJSON *openai_message_to_anthropic_content(cJSON *msg) {
     cJSON *content = cJSON_CreateArray();
+    /* DeepSeek reasoning_content -> Anthropic thinking block (must be first in content array) */
+    const char *rc = msg ? json_get_str(msg, "reasoning_content") : NULL;
+    if (rc && *rc) {
+        cJSON *think = cJSON_CreateObject();
+        cJSON_AddStringToObject(think, "type", "thinking");
+        cJSON_AddStringToObject(think, "thinking", rc);
+        cJSON_AddStringToObject(think, "signature", "");
+        cJSON_AddItemToArray(content, think);
+    }
     cJSON *txt = cJSON_GetObjectItemCaseSensitive(msg, "content");
     if (cJSON_IsString(txt) && txt->valuestring && txt->valuestring[0]) {
         cJSON *b = cJSON_CreateObject();
@@ -530,9 +539,6 @@ cJSON *convert_openai_response_to_anthropic(const char *body, const char *client
     cJSON_AddItemToObject(out, "content", msg ? openai_message_to_anthropic_content(msg) : cJSON_CreateArray());
     cJSON_AddStringToObject(out, "stop_reason", map_finish_reason(fr));
     cJSON_AddNullToObject(out, "stop_sequence");
-    /* 透传 DeepSeek 的 reasoning_content，供客户端在后续请求中传回 */
-    const char *rc = msg ? json_get_str(msg, "reasoning_content") : NULL;
-    if (rc && *rc) cJSON_AddStringToObject(out, "reasoning_content", rc);
     cJSON *usage = cJSON_CreateObject();
     cJSON *u = cJSON_GetObjectItemCaseSensitive(oai, "usage");
     cJSON_AddNumberToObject(usage, "input_tokens", json_get_long(u, "prompt_tokens", 0));
