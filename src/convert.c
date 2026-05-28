@@ -331,8 +331,10 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
         cJSON *p;
         cJSON_ArrayForEach(p, params) {
             if (!p->string) continue;
-            cJSON_ReplaceItemInObjectCaseSensitive(out, p->string, cJSON_Duplicate(p, 1));
-            if (!cJSON_GetObjectItemCaseSensitive(out, p->string)) {
+            cJSON *existing = cJSON_GetObjectItemCaseSensitive(out, p->string);
+            if (existing) {
+                cJSON_ReplaceItemInObjectCaseSensitive(out, p->string, cJSON_Duplicate(p, 1));
+            } else {
                 cJSON_AddItemToObject(out, p->string, cJSON_Duplicate(p, 1));
             }
         }
