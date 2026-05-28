@@ -326,6 +326,17 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
             cJSON *content = cJSON_GetObjectItemCaseSensitive(m, "content");
             if (!role || !content) continue;
             const char *rc = json_get_str(m, "reasoning_content");
+            /* Anthropic thinking blocks are nested in content array; extract for DeepSeek round-trip */
+            if (!rc && role && strcmp(role, "assistant") == 0 && cJSON_IsArray(content)) {
+                cJSON *blk;
+                cJSON_ArrayForEach(blk, content) {
+                    const char *t = json_get_str(blk, "type");
+                    if (t && strcmp(t, "thinking") == 0) {
+                        rc = json_get_str(blk, "thinking");
+                        break;
+                    }
+                }
+            }
             convert_message_content_blocks(messages, role, content, rc);
         }
     }
