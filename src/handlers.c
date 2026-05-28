@@ -354,11 +354,9 @@ static void handle_messages(struct evhttp_request *req) {
     enqueue_job(job);
 
     if (body) {
-        if (rt_get_mode() != RT_TXT) {
-            rt_print("[REQ] model=%s provider=%s stream=%d body_len=%zu",
-                client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, strlen(body));
-            rt_print_json("[REQ]", body);
-        }
+        rt_print("[REQ] model=%s provider=%s stream=%d body_len=%zu",
+            client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, strlen(body));
+        rt_print_json("[REQ]", body);
     } else {
         rt_print("[REQ] model=%s provider=%s stream=%d body_len=0",
             client_model, provider ? provider : "openai-compatible", stream ? 1 : 0);

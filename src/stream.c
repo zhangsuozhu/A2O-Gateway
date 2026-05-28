@@ -445,6 +445,9 @@ void stream_finish(gateway_job_t *job) {
         job->client_model, job->upstream_status, s->prompt_tokens, s->completion_tokens);
     if (job->upstream_body.ptr && job->upstream_body.len > 0) {
         if (rt_get_mode() == RT_TXT) {
+            if (s->reasoning_content && s->reasoning_content[0]) {
+                rt_print("[RES_THINK] model=%s %s", job->client_model, s->reasoning_content);
+            }
             rt_print("[RES_BODY] model=%s %s%s", job->client_model,
                 s->response_text ? s->response_text : "",
                 s->finish_reason ? s->finish_reason : "");
