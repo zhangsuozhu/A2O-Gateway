@@ -26,5 +26,18 @@ target_include_directories(cc-oai-gateway PRIVATE src ${LIBEVENT_INCLUDE_DIRS} $
 target_link_directories(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARY_DIRS} ${LIBCURL_LIBRARY_DIRS} ${CJSON_LIBRARY_DIRS})
 target_link_libraries(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARIES} ${LIBCURL_LIBRARIES} ${CJSON_LIBRARIES} pthread)
 
+enable_testing()
+add_executable(test_convert tests/test_convert.c src/convert.c)
+target_include_directories(test_convert PRIVATE src ${CJSON_INCLUDE_DIRS})
+target_link_directories(test_convert PRIVATE ${CJSON_LIBRARY_DIRS})
+target_link_libraries(test_convert PRIVATE ${CJSON_LIBRARIES})
+add_test(NAME convert_tests COMMAND test_convert)
+
+add_executable(test_stream tests/test_stream.c src/stream.c src/convert.c src/log.c)
+target_include_directories(test_stream PRIVATE src ${LIBEVENT_INCLUDE_DIRS} ${LIBCURL_INCLUDE_DIRS} ${CJSON_INCLUDE_DIRS})
+target_link_directories(test_stream PRIVATE ${LIBEVENT_LIBRARY_DIRS} ${LIBCURL_LIBRARY_DIRS} ${CJSON_LIBRARY_DIRS})
+target_link_libraries(test_stream PRIVATE ${LIBEVENT_LIBRARIES} ${LIBCURL_LIBRARIES} ${CJSON_LIBRARIES} pthread)
+add_test(NAME stream_tests COMMAND test_stream)
+
 install(TARGETS cc-oai-gateway DESTINATION bin)
 install(DIRECTORY web config DESTINATION share/cc-oai-gateway)

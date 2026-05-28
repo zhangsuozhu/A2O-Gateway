@@ -17,6 +17,8 @@
  */
 #define TEXT_FLUSH_THRESHOLD 4096
 
+static void stream_flush_thinking(gateway_job_t *job);
+
 /* 刷新待发送的文本缓冲区
  * 
  * 内部辅助函数，将 text_pending 缓冲区中的累积文本
@@ -389,7 +391,8 @@ void stream_finish(gateway_job_t *job) {
     if (s->ended) return;
     stream_start_reply(job);
     stream_message_start(job);
-    /* 刷新剩余的文本缓冲区 */
+    /* 刷新剩余的 thinking/text 缓冲区，保持 reasoning_content 先于正文输出。 */
+    stream_flush_thinking(job);
     stream_flush_text(job);
     if (s->text_started) {
         cJSON *data = cJSON_CreateObject();
@@ -591,8 +594,6 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
     }
     cJSON *delta = cJSON_GetObjectItemCaseSensitive(ch, "delta");
     if (cJSON_IsObject(delta)) {
-        const char *content = json_get_str(delta, "content");
-        if (content) stream_text_delta(job, content);
         /* 累积并流式转发 DeepSeek reasoning_content */
         const char *rc = json_get_str(delta, "reasoning_content");
         if (rc && *rc) {
@@ -610,8 +611,14 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
                 stream_flush_thinking(job);
             }
         }
+        const char *content = json_get_str(delta, "content");
+        if (content) {
+            stream_flush_thinking(job);
+            stream_text_delta(job, content);
+        }
         cJSON *tool_calls = cJSON_GetObjectItemCaseSensitive(delta, "tool_calls");
         if (cJSON_IsArray(tool_calls)) {
+            stream_flush_thinking(job);
             cJSON *tc;
             cJSON_ArrayForEach(tc, tool_calls) {
                 int oi = (int)json_get_long(tc, "index", 0);

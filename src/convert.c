@@ -50,6 +50,32 @@ cJSON *json_from_string_or_empty_object(const char *s) {
     return cJSON_CreateObject();
 }
 
+static void delete_all_object_items(cJSON *object, const char *key) {
+    if (!object || !key) return;
+    while (cJSON_GetObjectItemCaseSensitive(object, key)) {
+        cJSON_DeleteItemFromObjectCaseSensitive(object, key);
+    }
+}
+
+static void json_set_item(cJSON *object, const char *key, cJSON *item) {
+    if (!object || !key || !item) return;
+    delete_all_object_items(object, key);
+    cJSON_AddItemToObject(object, key, item);
+}
+
+static void json_set_dup(cJSON *object, const char *key, cJSON *value) {
+    if (!value) return;
+    json_set_item(object, key, cJSON_Duplicate(value, 1));
+}
+
+static void json_set_number(cJSON *object, const char *key, double value) {
+    json_set_item(object, key, cJSON_CreateNumber(value));
+}
+
+static void json_set_bool(cJSON *object, const char *key, bool value) {
+    json_set_item(object, key, cJSON_CreateBool(value));
+}
+
 /**
  * @brief 从 JSON 内容中提取纯文本字符串
  * @param content Anthropic 格式的内容，可以是字符串或内容块数组
@@ -347,44 +373,38 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
         cJSON *p;
         cJSON_ArrayForEach(p, params) {
             if (!p->string) continue;
-            cJSON *existing = cJSON_GetObjectItemCaseSensitive(out, p->string);
-            if (existing) {
-                cJSON_ReplaceItemInObjectCaseSensitive(out, p->string, cJSON_Duplicate(p, 1));
-            } else {
-                cJSON_AddItemToObject(out, p->string, cJSON_Duplicate(p, 1));
-            }
+            json_set_dup(out, p->string, p);
         }
     }
 
     cJSON *max_tokens = cJSON_GetObjectItemCaseSensitive(anth_req, "max_tokens");
-    if (cJSON_IsNumber(max_tokens)) cJSON_AddNumberToObject(out, "max_tokens", max_tokens->valuedouble);
+    if (cJSON_IsNumber(max_tokens)) json_set_number(out, "max_tokens", max_tokens->valuedouble);
     cJSON *temperature = cJSON_GetObjectItemCaseSensitive(anth_req, "temperature");
-    if (cJSON_IsNumber(temperature)) { cJSON_DeleteItemFromObjectCaseSensitive(out, "temperature"); cJSON_AddNumberToObject(out, "temperature", temperature->valuedouble); }
+    if (cJSON_IsNumber(temperature)) json_set_number(out, "temperature", temperature->valuedouble);
     cJSON *top_p = cJSON_GetObjectItemCaseSensitive(anth_req, "top_p");
-    if (cJSON_IsNumber(top_p)) { cJSON_DeleteItemFromObjectCaseSensitive(out, "top_p"); cJSON_AddNumberToObject(out, "top_p", top_p->valuedouble); }
+    if (cJSON_IsNumber(top_p)) json_set_number(out, "top_p", top_p->valuedouble);
     cJSON *stop = cJSON_GetObjectItemCaseSensitive(anth_req, "stop_sequences");
-    if (stop) cJSON_AddItemToObject(out, "stop", cJSON_Duplicate(stop, 1));
+    if (stop) json_set_dup(out, "stop", stop);
     cJSON *stream = cJSON_GetObjectItemCaseSensitive(anth_req, "stream");
     bool is_stream = cJSON_IsTrue(stream);
-    cJSON_AddBoolToObject(out, "stream", is_stream);
+    json_set_bool(out, "stream", is_stream);
     if (is_stream) {
         cJSON *so = cJSON_CreateObject();
         cJSON_AddBoolToObject(so, "include_usage", true);
-        cJSON_AddItemToObject(out, "stream_options", so);
+        json_set_item(out, "stream_options", so);
     }
 
     cJSON *tools = anthropic_tools_to_openai(cJSON_GetObjectItemCaseSensitive(anth_req, "tools"));
-    if (tools) cJSON_AddItemToObject(out, "tools", tools);
+    if (tools) json_set_item(out, "tools", tools);
     cJSON *tc = anthropic_tool_choice_to_openai(cJSON_GetObjectItemCaseSensitive(anth_req, "tool_choice"));
-    if (tc) cJSON_AddItemToObject(out, "tool_choice", tc);
+    if (tc) json_set_item(out, "tool_choice", tc);
 
     cJSON *extra = cJSON_GetObjectItemCaseSensitive(model_cfg, "extra_body");
     if (cJSON_IsObject(extra)) {
         cJSON *p;
         cJSON_ArrayForEach(p, extra) {
             if (!p->string) continue;
-            cJSON_DeleteItemFromObjectCaseSensitive(out, p->string);
-            cJSON_AddItemToObject(out, p->string, cJSON_Duplicate(p, 1));
+            json_set_dup(out, p->string, p);
         }
     }
     return out;
