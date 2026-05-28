@@ -347,7 +347,7 @@ static void handle_messages(struct evhttp_request *req) {
     job->stream = stream;
     job->stream_state.client_model = xstrdup(job->client_model);
     clock_gettime(CLOCK_MONOTONIC, &job->start_time);
-    stats_request_begin(job->client_model, job->provider_name, stream, body ? strlen(body) : 0);
+    stats_request_begin(job->upstream_model, job->provider_name, stream, body ? strlen(body) : 0);
     evhttp_request_own(req);
     enqueue_job(job);
 
