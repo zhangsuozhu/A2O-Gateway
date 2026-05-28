@@ -14,6 +14,16 @@
 /* 窗口时长（秒） */
 #define WINDOW_SECONDS 3600
 
+/* 滑动窗口速度统计：1 秒粒度，6 个槽位 = 覆盖最近 5 秒 */
+#define SLIDING_SLOTS 6
+
+typedef struct {
+    uint64_t input_tokens;
+    uint64_t output_tokens;
+    uint64_t request_bytes;
+    uint64_t response_bytes;
+} sliding_bucket_t;
+
 typedef struct model_stat_entry {
     char model_name[64];
     char provider[64];
@@ -35,6 +45,7 @@ typedef struct model_stat_entry {
     uint64_t curl_errors;
     time_t first_seen;
     time_t last_seen;
+    sliding_bucket_t sliding[SLIDING_SLOTS];
 } model_stat_entry_t;
 
 typedef struct time_window {
@@ -76,7 +87,12 @@ typedef struct gateway_stats {
     /* 当前活跃请求 */
     uint64_t active_requests;
     uint64_t peak_active_requests;
-    
+
+    /* 滑动窗口速度统计 */
+    sliding_bucket_t global_sliding[SLIDING_SLOTS];
+    int sliding_index;
+    time_t sliding_last_second;
+
     /* 模型统计 */
     int model_count;
     model_stat_entry_t models[MAX_MODEL_STATS];

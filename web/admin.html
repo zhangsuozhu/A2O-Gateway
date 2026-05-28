@@ -13,7 +13,7 @@
     header{background:#131c31;border-bottom:1px solid #1e2d4a;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
     header h1{font-size:19px;font-weight:650}
     header .sub{color:#8899b4;font-size:12px;margin-top:1px}
-    main{max-width:1060px;margin:0 auto;padding:18px}
+    main{max-width:1400px;margin:0 auto;padding:18px}
     .card{background:#131c31;border:1px solid #1e2d4a;border-radius:11px;padding:18px;margin-bottom:14px}
     .card h2{font-size:15px;font-weight:600;margin-bottom:12px}
     .row{display:flex;flex-wrap:wrap;gap:10px}
@@ -69,7 +69,8 @@
     .stat-card .label{font-size:11px;color:#8899b4;margin-bottom:4px}
     .stat-card .value{font-size:20px;font-weight:700;color:#e2e8f0}
     .stat-card .sub{font-size:11px;color:#64748b;margin-top:2px}
-    .stats-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+    .stats-wrap{overflow-x:auto;margin-top:8px}
+    .stats-table{width:100%;border-collapse:collapse;font-size:12px}
     .stats-table th,.stats-table td{padding:8px 10px;text-align:left;border-bottom:1px solid #1e2d4a}
     .stats-table th{color:#8899b4;font-weight:600;font-size:11px;background:#0e1729}
     .stats-table tr:hover{background:rgba(255,255,255,.02)}
@@ -175,6 +176,7 @@
       <div class="card">
         <h2>🤖 模型统计</h2>
         <div id="statsModelsWrap">
+          <div class="stats-wrap">
           <table class="stats-table" id="statsModelsTable">
             <thead>
               <tr>
@@ -197,6 +199,7 @@
             </thead>
             <tbody id="statsModelsBody"></tbody>
           </table>
+          </div>
         </div>
       </div>
 
@@ -757,7 +760,7 @@ function renderStatsError(msg) {
   $('statAvgLatency').textContent = '!';
   $('statTrafficSpeed').textContent = '!';
   // 模型表格显示错误行
-  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">输入tokens/s</th><th class="num">输出tokens/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="15" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">输入tokens/s</th><th class="num">输出tokens/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="15" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
   $('statsChartWrap').innerHTML = '<div class="stats-empty">' + esc(msg) + '</div>';
 }
 
@@ -775,7 +778,7 @@ function renderStats(data) {
   $('statTrafficSpeed').textContent = fmtSpeed(g.traffic_speed);
 
   // 模型统计 - 先确保表格结构存在
-  $('statsModelsWrap').innerHTML = '<table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">输入tokens/s</th><th class="num">输出tokens/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">输入tokens/s</th><th class="num">输出tokens/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table></div>';
   var tbody = $('statsModelsBody');
   tbody.innerHTML = '';
   var models = data.models || [];

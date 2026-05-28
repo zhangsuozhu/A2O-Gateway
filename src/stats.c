@@ -63,6 +63,46 @@ void stats_init(void) {
     pthread_mutex_init(&G_STATS.lock, NULL);
     G_STATS.start_time = time(NULL);
     G_STATS.min_latency_ms = -1.0;
+    G_STATS.sliding_last_second = time(NULL);
+}
+
+/* 推进滑动窗口环形缓冲区：每秒对应一个槽位，最多 SLIDING_SLOTS 个槽位 */
+static void sliding_tick(void) {
+    time_t now = time(NULL);
+    int diff = (int)(now - G_STATS.sliding_last_second);
+    if (diff <= 0) return;
+    if (diff > SLIDING_SLOTS) diff = SLIDING_SLOTS;
+    G_STATS.sliding_last_second = now;
+
+    for (int i = 0; i < diff; i++) {
+        G_STATS.sliding_index = (G_STATS.sliding_index + 1) % SLIDING_SLOTS;
+        int idx = G_STATS.sliding_index;
+        memset(&G_STATS.global_sliding[idx], 0, sizeof(sliding_bucket_t));
+        for (int m = 0; m < G_STATS.model_count; m++) {
+            memset(&G_STATS.models[m].sliding[idx], 0, sizeof(sliding_bucket_t));
+        }
+    }
+}
+
+/* 对滑动窗口所有槽位求和 */
+static void sum_sliding(const sliding_bucket_t buckets[], uint64_t *in, uint64_t *out,
+                        uint64_t *req_b, uint64_t *res_b) {
+    *in = *out = *req_b = *res_b = 0;
+    for (int i = 0; i < SLIDING_SLOTS; i++) {
+        *in += buckets[i].input_tokens;
+        *out += buckets[i].output_tokens;
+        *req_b += buckets[i].request_bytes;
+        *res_b += buckets[i].response_bytes;
+    }
+}
+
+/* 计算有效滑动窗口秒数 */
+static double sliding_window_seconds(double uptime) {
+    double sec = (double)(time(NULL) - G_STATS.sliding_last_second + SLIDING_SLOTS);
+    if (sec > SLIDING_SLOTS) sec = (double)SLIDING_SLOTS;
+    if (sec > uptime) sec = uptime;
+    if (sec < 1.0) sec = 1.0;
+    return sec;
 }
 
 void stats_request_begin(const char *model, const char *provider, bool stream, size_t request_bytes) {
@@ -86,6 +126,10 @@ void stats_request_begin(const char *model, const char *provider, bool stream, s
     else entry->nonstream_requests++;
     entry->total_request_bytes += request_bytes;
 
+    /* 滑动窗口累计 request_bytes */
+    G_STATS.global_sliding[G_STATS.sliding_index].request_bytes += request_bytes;
+    entry->sliding[G_STATS.sliding_index].request_bytes += request_bytes;
+
     pthread_mutex_unlock(&G_STATS.lock);
 }
 
@@ -94,6 +138,8 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
                        long input_tokens, long output_tokens,
                        double latency_ms) {
     pthread_mutex_lock(&G_STATS.lock);
+
+    sliding_tick();
 
     G_STATS.active_requests--;
     G_STATS.total_response_bytes += response_bytes;
@@ -152,6 +198,19 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
         }
     }
 
+    /* 滑动窗口累计 */
+    int si = G_STATS.sliding_index;
+    if (input_tokens > 0) {
+        G_STATS.global_sliding[si].input_tokens += (uint64_t)input_tokens;
+        entry->sliding[si].input_tokens += (uint64_t)input_tokens;
+    }
+    if (output_tokens > 0) {
+        G_STATS.global_sliding[si].output_tokens += (uint64_t)output_tokens;
+        entry->sliding[si].output_tokens += (uint64_t)output_tokens;
+    }
+    G_STATS.global_sliding[si].response_bytes += response_bytes;
+    entry->sliding[si].response_bytes += response_bytes;
+
     /* 时间窗口 */
     time_window_t *window = get_current_window();
     window->requests++;
@@ -163,7 +222,7 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
     pthread_mutex_unlock(&G_STATS.lock);
 }
 
-static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double uptime) {
+static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double window_sec, double uptime) {
     cJSON *obj = cJSON_CreateObject();
     cJSON_AddStringToObject(obj, "model", entry->model_name);
     cJSON_AddStringToObject(obj, "provider", entry->provider);
@@ -178,7 +237,7 @@ static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double uptime
     cJSON_AddNumberToObject(obj, "request_bytes", (double)entry->total_request_bytes);
     cJSON_AddNumberToObject(obj, "response_bytes", (double)entry->total_response_bytes);
     cJSON_AddNumberToObject(obj, "total_bytes", (double)(entry->total_request_bytes + entry->total_response_bytes));
-    
+
     double avg_latency = (entry->latency_count > 0) ? (entry->total_latency_ms / entry->latency_count) : 0.0;
     cJSON_AddNumberToObject(obj, "avg_latency_ms", avg_latency);
     cJSON_AddNumberToObject(obj, "min_latency_ms", entry->min_latency_ms >= 0 ? entry->min_latency_ms : 0.0);
@@ -189,10 +248,12 @@ static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double uptime
     cJSON_AddNumberToObject(obj, "first_seen", (double)entry->first_seen);
     cJSON_AddNumberToObject(obj, "last_seen", (double)entry->last_seen);
 
-    /* 每个模型的 token 速度 (tokens/s) */
-    cJSON_AddNumberToObject(obj, "input_token_speed", uptime > 0 ? (double)entry->input_tokens / uptime : 0.0);
-    cJSON_AddNumberToObject(obj, "output_token_speed", uptime > 0 ? (double)entry->output_tokens / uptime : 0.0);
-    cJSON_AddNumberToObject(obj, "traffic_speed", uptime > 0 ? (double)(entry->total_request_bytes + entry->total_response_bytes) / uptime : 0.0);
+    /* 基于滑动窗口的 token 速度 (tokens/s) */
+    uint64_t si, so, srb, sresb;
+    sum_sliding(entry->sliding, &si, &so, &srb, &sresb);
+    cJSON_AddNumberToObject(obj, "input_token_speed", window_sec > 0 ? (double)si / window_sec : 0.0);
+    cJSON_AddNumberToObject(obj, "output_token_speed", window_sec > 0 ? (double)so / window_sec : 0.0);
+    cJSON_AddNumberToObject(obj, "traffic_speed", window_sec > 0 ? (double)(srb + sresb) / window_sec : 0.0);
 
     return obj;
 }
@@ -246,12 +307,15 @@ cJSON *stats_get_json(void) {
     cJSON_AddNumberToObject(overview, "min_latency_ms", G_STATS.min_latency_ms >= 0 ? G_STATS.min_latency_ms : 0.0);
     cJSON_AddNumberToObject(overview, "max_latency_ms", G_STATS.max_latency_ms);
 
-    /* 速度统计 */
+    /* 速度统计（基于滑动窗口） */
     double uptime = (double)(time(NULL) - G_STATS.start_time);
     if (uptime < 1.0) uptime = 1.0;
-    cJSON_AddNumberToObject(overview, "input_token_speed", (double)G_STATS.total_input_tokens / uptime);
-    cJSON_AddNumberToObject(overview, "output_token_speed", (double)G_STATS.total_output_tokens / uptime);
-    cJSON_AddNumberToObject(overview, "traffic_speed", (double)(G_STATS.total_request_bytes + G_STATS.total_response_bytes) / uptime);
+    double window_sec = sliding_window_seconds(uptime);
+    uint64_t gsi, gso, gsrb, gsresb;
+    sum_sliding(G_STATS.global_sliding, &gsi, &gso, &gsrb, &gsresb);
+    cJSON_AddNumberToObject(overview, "input_token_speed", window_sec > 0 ? (double)gsi / window_sec : 0.0);
+    cJSON_AddNumberToObject(overview, "output_token_speed", window_sec > 0 ? (double)gso / window_sec : 0.0);
+    cJSON_AddNumberToObject(overview, "traffic_speed", window_sec > 0 ? (double)(gsrb + gsresb) / window_sec : 0.0);
 
     cJSON_AddNumberToObject(overview, "http_4xx", (double)G_STATS.http_4xx_count);
     cJSON_AddNumberToObject(overview, "http_5xx", (double)G_STATS.http_5xx_count);
@@ -261,7 +325,7 @@ cJSON *stats_get_json(void) {
     /* 模型统计 */
     cJSON *models = cJSON_CreateArray();
     for (int i = 0; i < G_STATS.model_count; i++) {
-        cJSON_AddItemToArray(models, model_entry_to_json(&G_STATS.models[i], uptime));
+        cJSON_AddItemToArray(models, model_entry_to_json(&G_STATS.models[i], window_sec, uptime));
     }
     cJSON_AddItemToObject(root, "models", models);
     
@@ -281,6 +345,7 @@ void stats_reset(void) {
     memset(&G_STATS, 0, sizeof(G_STATS));
     G_STATS.start_time = time(NULL);
     G_STATS.min_latency_ms = -1.0;
+    G_STATS.sliding_last_second = time(NULL);
     pthread_mutex_unlock(&G_STATS.lock);
     log_msg("INFO", "stats reset");
 }
