@@ -438,6 +438,24 @@ char *make_upstream_url(cJSON *model_cfg) {
     return out;
 }
 
+char *make_upstream_url_for_messages(cJSON *model_cfg) {
+    const char *endpoint = json_get_str(model_cfg, "endpoint");
+    if (endpoint && *endpoint) return xstrdup(endpoint);
+    const char *base = json_get_str(model_cfg, "base_url");
+    const char *raw = base ? base : "";
+    size_t n = strlen(raw);
+    while (n > 0 && raw[n - 1] == '/') n--;
+    char *b = (char *)calloc(1, n + 1);
+    if (!b) abort();
+    memcpy(b, raw, n);
+    b[n] = 0;
+    size_t m = n + strlen("/v1/messages") + 2;
+    char *out = (char *)calloc(1, m);
+    snprintf(out, m, "%s/v1/messages", b);
+    free(b);
+    return out;
+}
+
 /**
  * @brief 将 OpenAI 的 finish_reason 映射为 Anthropic 的 stop_reason
  * @param fr OpenAI 的 finish_reason 字符串

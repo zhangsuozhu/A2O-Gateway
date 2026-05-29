@@ -64,7 +64,7 @@
     #loaded{display:none}
     .tab-btn{position:relative}
     .tab-btn.active{color:#fff;border-color:#3b82f6;background:rgba(59,130,246,.1)}
-    .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:14px}
+    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
     .stat-card{background:#0e1729;border:1px solid #1e2d4a;border-radius:8px;padding:14px}
     .stat-card .label{font-size:11px;color:#8899b4;margin-bottom:4px}
     .stat-card .value{font-size:20px;font-weight:700;color:#e2e8f0}
@@ -85,7 +85,7 @@
     .chart-bar .bar-val{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:9px;color:#8899b4;white-space:nowrap}
     .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
     .stats-empty{text-align:center;padding:40px;color:#8899b4;font-size:13px}
-    .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+    .rt-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
     .rt-card{background:#0e1729;border:1px solid #1e2d4a;border-radius:8px;padding:14px;text-align:center}
     .rt-card .label{font-size:11px;color:#8899b4;margin-bottom:4px}
     .rt-card .value{font-size:24px;font-weight:700;color:#e2e8f0}
@@ -107,7 +107,7 @@
     .rt-empty{text-align:center;padding:40px;color:#8899b4;font-size:13px}
     .rt-pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:6px;animation:pulse 2s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-    @media(max-width:700px){.g2,.g3{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:700px){.g2,.g3{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(2,1fr)}.rt-grid{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
 <body>
@@ -286,6 +286,7 @@
     <div class="f"><label>Base URL *</label><input id="modalBaseUrl" placeholder="https://api.example.com/v1" /></div>
     <div class="f"><label>上游真实模型名 *</label><input id="modalUpstream" placeholder="例如: qwen3-coder-plus" /></div>
     <div class="f"><label>API Key *</label><input id="modalApiKey" type="text" placeholder="输入上游的 API Key" /></div>
+    <div class="f"><label>API 模式</label><select id="modalApiMode"><option value="">OpenAI 兼容（默认）</option><option value="passthrough">Anthropic 透传</option></select></div>
     <div class="ma">
       <button class="ghost" onclick="hideAddModal()">取消</button>
       <button class="green" onclick="confirmAdd()">✓ 添加</button>
@@ -499,6 +500,7 @@ function createModel(m, i) {
   html += '  <div><label>Base URL</label><input class="fi" data-idx="' + i + '" data-k="base_url" value="' + escAttr(m.base_url || '') + '" placeholder="https://api.example.com/v1" /></div>';
   html += '  <div><label>Endpoint（可选）</label><input class="fi" data-idx="' + i + '" data-k="endpoint" value="' + escAttr(m.endpoint || '') + '" placeholder="留空则用 Base URL + /chat/completions" /></div>';
   html += '  <div><label>上游模型名</label><input class="fi" data-idx="' + i + '" data-k="upstream_model" value="' + escAttr(m.upstream_model || '') + '" placeholder="如 qwen3-coder-plus" /></div>';
+  html += '  <div><label>API 模式</label><select class="fi" data-idx="' + i + '" data-k="api_mode"><option value=""' + (m.api_mode ? '' : ' selected') + '>OpenAI 兼容</option><option value="passthrough"' + (m.api_mode === 'passthrough' ? ' selected' : '') + '>Anthropic 透传</option></select></div>';
   html += '  <div><label>API Key</label><input class="fi" data-idx="' + i + '" data-k="api_key" value="' + escAttr(m.api_key || '') + '" type="text" style="font-family:monospace" /></div>';
   html += '</div>';
 
@@ -681,6 +683,7 @@ function showAddModal() {
   $('modalBaseUrl').value = '';
   $('modalUpstream').value = '';
   $('modalApiKey').value = '';
+  $('modalApiMode').value = '';
   $('addModal').classList.add('show');
   setTimeout(function() { $('modalId').focus(); }, 100);
 }
@@ -692,6 +695,7 @@ function confirmAdd() {
   var base_url = $('modalBaseUrl').value.trim();
   var upstream_model = $('modalUpstream').value.trim();
   var api_key = $('modalApiKey').value.trim();
+  var api_mode = $('modalApiMode').value;
   if (!id) { toast('请输入模型 ID', true); $('modalId').focus(); return; }
   if (!base_url) { toast('请输入 Base URL', true); $('modalBaseUrl').focus(); return; }
   if (!upstream_model) { toast('请输入上游真实模型名', true); $('modalUpstream').focus(); return; }
@@ -699,7 +703,7 @@ function confirmAdd() {
 
   if (!cfg) cfg = {models:[]};
   cfg.models = cfg.models || [];
-  cfg.models.push({
+  var newModel = {
     id: id,
     provider: provider,
     priority: 100,
@@ -711,7 +715,9 @@ function confirmAdd() {
     enabled: true,
     params: {temperature: 0.2, top_p: 0.95},
     extra_body: {}
-  });
+  };
+  if (api_mode) newModel.api_mode = api_mode;
+  cfg.models.push(newModel);
   if (!cfg.active_model) cfg.active_model = id;
   hideAddModal();
   renderModels();

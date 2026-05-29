@@ -260,6 +260,7 @@ char *user_agent;       /**< 客户端 User-Agent（透传给上游） */
 
     /* 请求模式标志 */
     bool stream;            /**< 是否为流式请求（SSE）：true=流式，false=非流式 */
+    bool passthrough;       /**< 是否为透传模式：true=不转换协议直接转发，false=Anthropic↔OpenAI 转换 */
 
     /* 实时状态（用于调试面板） */
     job_state_t job_state;  /**< SENDING / WAITING / RECEIVING */

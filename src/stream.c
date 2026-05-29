@@ -701,6 +701,16 @@ void process_sse_line(gateway_job_t *job, char *line) {
 void stream_parse_append(gateway_job_t *job, const char *ptr, size_t n) {
     stream_state_t *s = &job->stream_state;
     if (s->ended) return;
+    /* 透传模式：直接原样转发上游 SSE 数据，不做 OpenAI 格式解析 */
+    if (job->passthrough) {
+        char *raw = (char *)malloc(n + 1);
+        if (!raw) return;
+        memcpy(raw, ptr, n);
+        raw[n] = 0;
+        stream_send_chunk(job, raw);
+        free(raw);
+        return;
+    }
     if (s->linebuf_len + n + 1 > s->linebuf_cap) {
         size_t nc = s->linebuf_cap ? s->linebuf_cap * 2 : 8192;
         while (nc < s->linebuf_len + n + 1) nc *= 2;

@@ -315,16 +315,29 @@ static void handle_messages(struct evhttp_request *req) {
         log_msg("WARN", "no enabled model found for requested_model=%s", requested_model ? requested_model : "(null)");
         cJSON_Delete(anth); free(body); send_error_json(req, 503, "configuration_error", "no enabled model configured"); return;
     }
-    cJSON *oai = build_openai_request(anth, model);
-    char *oai_body = cJSON_PrintUnformatted(oai);
+    const char *api_mode = json_get_str(model, "api_mode");
+    bool passthrough = api_mode && strcmp(api_mode, "passthrough") == 0;
+
+    cJSON *oai = NULL;
+    char *upstream_body = NULL;
+    char *url = NULL;
+    if (passthrough) {
+        /* 透传模式：不做协议转换，直接使用原始 Anthropic 请求体 */
+        upstream_body = body;  /* 转移所有权 */
+        body = NULL;
+        url = make_upstream_url_for_messages(model);
+    } else {
+        oai = build_openai_request(anth, model);
+        upstream_body = cJSON_PrintUnformatted(oai);
+        url = make_upstream_url(model);
+    }
     bool stream = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(anth, "stream"));
     const char *client_model = requested_model && *requested_model ? requested_model : json_get_str(model, "id");
     const char *upstream_model = json_get_str(model, "upstream_model");
     const char *api_key = json_get_str(model, "api_key");
     const char *provider = json_get_str(model, "provider");
-    char *url = make_upstream_url(model);
 
-    log_msg("INFO", "RECV model=%s body_len=%zu stream=%d", client_model, body ? strlen(body) : 0, stream ? 1 : 0);
+    log_msg("INFO", "RECV model=%s body_len=%zu stream=%d passthrough=%d", client_model, body ? strlen(body) : 0, stream ? 1 : 0, passthrough ? 1 : 0);
     if (body) {
         size_t bl = strlen(body);
         if (bl > 4096) bl = 4096;
@@ -335,7 +348,7 @@ static void handle_messages(struct evhttp_request *req) {
     membuf_init(&job->upstream_body);
     pthread_mutex_init(&job->send_mu, NULL);
     job->client_req = req;
-    job->request_body = oai_body;
+    job->request_body = upstream_body;
     job->upstream_url = url;
     job->api_key = xstrdup(api_key ? api_key : "");
     job->user_agent = xstrdup(header_get(req, "User-Agent"));
@@ -343,11 +356,10 @@ static void handle_messages(struct evhttp_request *req) {
     job->client_model = xstrdup(client_model ? client_model : "claude-code-gateway");
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
     job->stream = stream;
+    job->passthrough = passthrough;
     job->stream_state.client_model = xstrdup(job->client_model);
-    /* 估算 input_tokens：基于请求体长度（每 4 字节 ≈ 1 token），
-       流式请求若上游不返回 usage.prompt_tokens 时作为兜底 */
-    if (oai_body) {
-        job->stream_state.prompt_tokens = (long)(strlen(oai_body) / 4);
+    if (upstream_body) {
+        job->stream_state.prompt_tokens = (long)(strlen(upstream_body) / 4);
     }
     clock_gettime(CLOCK_MONOTONIC, &job->start_time);
     stats_request_begin(job->upstream_model, job->provider_name, stream, body ? strlen(body) : 0);
@@ -355,29 +367,29 @@ static void handle_messages(struct evhttp_request *req) {
     enqueue_job(job);
 
     if (body) {
-        rt_print("[REQ] model=%s provider=%s stream=%d body_len=%zu",
-            client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, strlen(body));
+        rt_print("[REQ] model=%s provider=%s stream=%d passthrough=%d body_len=%zu",
+            client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, passthrough ? 1 : 0, strlen(body));
         rt_print_json("[REQ]", body);
     } else {
-        rt_print("[REQ] model=%s provider=%s stream=%d body_len=0",
-            client_model, provider ? provider : "openai-compatible", stream ? 1 : 0);
+        rt_print("[REQ] model=%s provider=%s stream=%d passthrough=%d body_len=0",
+            client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, passthrough ? 1 : 0);
     }
 
-    log_msg("INFO", "SEND model=%s upstream_model=%s provider=%s stream=%d url=%s oai_body_len=%zu",
-        job->client_model, job->upstream_model, job->provider_name, stream ? 1 : 0, job->upstream_url, oai_body ? strlen(oai_body) : 0);
-    if (oai_body) {
-        size_t ol = strlen(oai_body);
+    log_msg("INFO", "SEND model=%s upstream_model=%s provider=%s stream=%d passthrough=%d url=%s upstream_body_len=%zu",
+        job->client_model, job->upstream_model, job->provider_name, stream ? 1 : 0, passthrough ? 1 : 0, job->upstream_url, upstream_body ? strlen(upstream_body) : 0);
+    if (upstream_body) {
+        size_t ol = strlen(upstream_body);
         if (ol > 4096) ol = 4096;
-        log_msg("DEBUG", "UP_REQ %.*s", (int)ol, oai_body);
+        log_msg("DEBUG", "UP_REQ %.*s", (int)ol, upstream_body);
         if (rt_get_mode() == RT_TXT) {
-            rt_print("[UP_REQ] model=%s oai_body_len=%zu\n%s", client_model, strlen(oai_body), oai_body);
+            rt_print("[UP_REQ] model=%s upstream_body_len=%zu\n%s", client_model, strlen(upstream_body), upstream_body);
         } else {
-            rt_print("[UP_REQ] model=%s oai_body_len=%zu", client_model, strlen(oai_body));
-            rt_print_json("[UP_REQ]", oai_body);
+            rt_print("[UP_REQ] model=%s upstream_body_len=%zu", client_model, strlen(upstream_body));
+            rt_print_json("[UP_REQ]", upstream_body);
         }
     }
+    if (oai) cJSON_Delete(oai);
     cJSON_Delete(model);
-    cJSON_Delete(oai);
     cJSON_Delete(anth);
     free(body);
 }

@@ -89,6 +89,14 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg);
 char *make_upstream_url(cJSON *model_cfg);
 
 /**
+ * @brief 构建透传模式下的上游 API URL（/v1/messages 而非 /chat/completions）
+ * @param model_cfg 模型配置对象
+ * @return 返回新分配的 URL 字符串，以 /v1/messages 结尾
+ * @note 用于 provider=anthropic 的透传模式，直接转发 Anthropic 格式请求
+ */
+char *make_upstream_url_for_messages(cJSON *model_cfg);
+
+/**
  * @brief 将 OpenAI 的 finish_reason 映射为 Anthropic 的 stop_reason
  * @param fr OpenAI 的 finish_reason 字符串
  * @return 返回对应的 Anthropic stop_reason 常量字符串

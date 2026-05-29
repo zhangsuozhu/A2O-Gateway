@@ -121,6 +121,40 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
             cJSON_Delete(e);
             code_out = 502;
         } else {
+            if (job->passthrough) {
+                /* 透传模式：上游响应已是 Anthropic 格式，无需协议转换 */
+                cJSON *anth = cJSON_Parse(job->upstream_body.ptr ? job->upstream_body.ptr : "");
+                if (!anth) {
+                    log_msg("ERROR", "PASSTHROUGH_PARSE_FAIL model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
+                    cJSON *j = cJSON_CreateObject();
+                    cJSON *err = cJSON_CreateObject();
+                    cJSON_AddStringToObject(err, "type", "conversion_error");
+                    cJSON_AddStringToObject(err, "message", "failed to parse passthrough response");
+                    cJSON_AddItemToObject(j, "error", err);
+                    json_out = cJSON_PrintUnformatted(j);
+                    cJSON_Delete(j);
+                    code_out = 502;
+                } else {
+                    /* 检测上游业务错误 */
+                    cJSON *upstream_err = cJSON_GetObjectItemCaseSensitive(anth, "error");
+                    if (upstream_err) {
+                        log_msg("ERROR", "PASSTHROUGH_UPSTREAM_ERR model=%s", job->client_model);
+                        json_out = cJSON_PrintUnformatted(anth);
+                        cJSON_Delete(anth);
+                        code_out = 502;
+                    } else {
+                        log_msg("INFO", "RESP_OK model=%s (passthrough)", job->client_model);
+                        json_out = cJSON_PrintUnformatted(anth);
+                        cJSON *usage = cJSON_GetObjectItemCaseSensitive(anth, "usage");
+                        if (usage) {
+                            input_tokens = (long)json_get_long(usage, "input_tokens", 0);
+                            output_tokens = (long)json_get_long(usage, "output_tokens", 0);
+                        }
+                        cJSON_Delete(anth);
+                        code_out = 200;
+                    }
+                }
+            } else {
             cJSON *anth = convert_openai_response_to_anthropic(job->upstream_body.ptr, job->client_model);
             if (!anth) {
                 log_msg("ERROR", "CONV_FAIL model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
@@ -153,6 +187,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                     code_out = 200;
                 }
             }
+            }
         }
     }
     if (json_out) {
@@ -172,7 +207,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     if (json_out) {
         rt_print_json("[RES_BODY]", json_out);
     }
-    
+
     struct timespec end_time;
     clock_gettime(CLOCK_MONOTONIC, &end_time);
     double latency_ms = (end_time.tv_sec - job->start_time.tv_sec) * 1000.0 + (end_time.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
@@ -271,16 +306,27 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
 
     job->headers = NULL;
     job->headers = curl_slist_append(job->headers, "Content-Type: application/json");
-    job->headers = curl_slist_append(job->headers, "Accept: application/json, text/event-stream");
+    if (job->passthrough) {
+        /* Anthropic API 使用 x-api-key 和 anthropic-version 头 */
+        if (job->api_key && *job->api_key) {
+            char xkey[4096];
+            snprintf(xkey, sizeof(xkey), "x-api-key: %s", job->api_key);
+            job->headers = curl_slist_append(job->headers, xkey);
+        }
+        job->headers = curl_slist_append(job->headers, "anthropic-version: 2023-06-01");
+        job->headers = curl_slist_append(job->headers, "Accept: application/json, text/event-stream");
+    } else {
+        job->headers = curl_slist_append(job->headers, "Accept: application/json, text/event-stream");
+        if (job->api_key && *job->api_key) {
+            char auth[4096];
+            snprintf(auth, sizeof(auth), "Authorization: Bearer %s", job->api_key);
+            job->headers = curl_slist_append(job->headers, auth);
+        }
+    }
     if (job->user_agent && *job->user_agent) {
         char ua[512];
         snprintf(ua, sizeof(ua), "User-Agent: %s", job->user_agent);
         job->headers = curl_slist_append(job->headers, ua);
-    }
-    if (job->api_key && *job->api_key) {
-        char auth[4096];
-        snprintf(auth, sizeof(auth), "Authorization: Bearer %s", job->api_key);
-        job->headers = curl_slist_append(job->headers, auth);
     }
     curl_easy_setopt(job->easy, CURLOPT_HTTPHEADER, job->headers);
     curl_multi_add_handle(w->multi, job->easy);
