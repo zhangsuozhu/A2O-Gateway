@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/alanx/data/claude-code-openai-gateway/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
