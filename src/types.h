@@ -139,6 +139,12 @@ typedef struct app_config {
  * - start_emitted: 是否已向客户端发送过工具调用的开始事件
  * - id/name:      工具调用的唯一标识和函数名称
  */
+typedef enum {
+    JOB_SENDING = 0,  /* 正在发送请求给上游 */
+    JOB_WAITING = 1,  /* 请求已发完，等上游返回第一个字节 */
+    JOB_RECEIVING = 2 /* 正在接收上游响应数据 */
+} job_state_t;
+
 typedef struct tool_stream_state {
     int openai_index;      /**< OpenAI 格式中 tool_calls 数组的下标 */
     int block_index;       /**< Anthropic 格式中 content block 的下标 */
@@ -223,6 +229,8 @@ typedef struct worker {
     CURLM *multi;               /**< libcurl 多句柄，管理本线程内所有并发 HTTP 请求 */
     gateway_job_t *pending_head; /**< 待处理任务队列的头部指针（链表） */
     gateway_job_t *pending_tail; /**< 待处理任务队列的尾部指针（链表） */
+    gateway_job_t *active_head;  /**< 正在 curl 中传输的任务链表（用于实时调试） */
+    gateway_job_t *active_tail;  /**< 活跃任务链表尾部 */
     int still_running;          /**< 当前 CURLM 中仍在执行中的 easy handle 数量 */
     bool stop;                  /**< 线程停止标志：设为 true 后线程将在合适时机退出 */
     int id;                     /**< 工作线程的数字 ID，用于日志区分 */
@@ -243,6 +251,7 @@ struct gateway_job {
     /* 上游连接配置 */
     char *upstream_url;     /**< 上游提供商的 API 端点完整 URL */
     char *api_key;          /**< 用于上游认证的实际 API 密钥 */
+char *user_agent;       /**< 客户端 User-Agent（透传给上游） */
     char *provider_name;    /**< 上游提供商名称（如 "anthropic"、"openai"），用于路由 */
 
     /* 模型映射 */
@@ -251,6 +260,9 @@ struct gateway_job {
 
     /* 请求模式标志 */
     bool stream;            /**< 是否为流式请求（SSE）：true=流式，false=非流式 */
+
+    /* 实时状态（用于调试面板） */
+    job_state_t job_state;  /**< SENDING / WAITING / RECEIVING */
 
     /* 上游响应状态 */
     bool upstream_headers_done;  /**< 标记是否已接收并处理完上游响应头 */
@@ -268,6 +280,7 @@ struct gateway_job {
     /* 所属工作线程与链表指针 */
     worker_t *worker;        /**< 处理本任务的工作线程指针 */
     gateway_job_t *next;     /**< 待处理队列中的下一个任务（链表） */
+    gateway_job_t *active_next; /**< 活跃任务链表中的下一个（在 curl 中传输时） */
 
     /* 发送缓冲区（线程安全） */
     pthread_mutex_t send_mu; /**< 保护 send_buf 的互斥锁（主线程与工作线程可能并发访问） */

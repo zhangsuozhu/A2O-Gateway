@@ -63,6 +63,11 @@ static rt_mode_t rt_mode = RT_OFF;
  * ==================================================================== */
 
 /**
+ * @brief 当前日志文件路径（用于 log_rotate 重开）
+ */
+static char log_path_buf[PATH_MAX + 1] = {0};
+
+/**
  * @brief 打开或切换日志文件
  *
  * @param path 日志文件路径；若传入 NULL，则关闭当前日志文件
@@ -78,7 +83,27 @@ static rt_mode_t rt_mode = RT_OFF;
 void log_open(const char *path) {
     pthread_mutex_lock(&LOG_MU);
     if (LOG_FP) { fclose(LOG_FP); LOG_FP = NULL; }
-    if (path) LOG_FP = fopen(path, "a");
+    if (path) {
+        snprintf(log_path_buf, sizeof(log_path_buf), "%s", path);
+        LOG_FP = fopen(path, "a");
+    } else {
+        log_path_buf[0] = '\0';
+    }
+    pthread_mutex_unlock(&LOG_MU);
+}
+
+/**
+ * @brief 旋转日志文件（响应 SIGHUP 信号）
+ *
+ * 关闭当前日志文件并重新打开，用于日志轮转场景。
+ * 例如 logrotate 移动文件后发送 SIGHUP，程序重新打开新文件。
+ */
+void log_rotate(void) {
+    pthread_mutex_lock(&LOG_MU);
+    if (LOG_FP && log_path_buf[0]) {
+        fclose(LOG_FP);
+        LOG_FP = fopen(log_path_buf, "a");
+    }
     pthread_mutex_unlock(&LOG_MU);
 }
 

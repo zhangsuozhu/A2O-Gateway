@@ -85,6 +85,28 @@
     .chart-bar .bar-val{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:9px;color:#8899b4;white-space:nowrap}
     .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
     .stats-empty{text-align:center;padding:40px;color:#8899b4;font-size:13px}
+    .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+    .rt-card{background:#0e1729;border:1px solid #1e2d4a;border-radius:8px;padding:14px;text-align:center}
+    .rt-card .label{font-size:11px;color:#8899b4;margin-bottom:4px}
+    .rt-card .value{font-size:24px;font-weight:700;color:#e2e8f0}
+    .rt-card .value.ok{color:#22c55e}
+    .rt-card .value.warn{color:#f59e0b}
+    .rt-card .value.busy{color:#ef4444}
+    .worker-row{background:#0e1729;border:1px solid #1e2d4a;border-radius:8px;padding:12px;margin-bottom:8px}
+    .worker-row h4{font-size:13px;font-weight:600;margin-bottom:8px;color:#8899b4}
+    .worker-row .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;margin-right:6px}
+    .worker-row .pill.pending{background:rgba(245,158,11,.12);color:#f59e0b}
+    .worker-row .pill.sending{background:rgba(168,85,247,.12);color:#a855f7}
+    .worker-row .pill.waiting{background:rgba(239,68,68,.12);color:#ef4444}
+    .worker-row .pill.receiving{background:rgba(34,197,94,.12);color:#22c55e}
+    .job-item{background:#131c31;border:1px solid #1e2d4a;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+    .job-item .model{color:#e2e8f0;font-weight:600}
+    .job-item .meta{color:#8899b4;font-size:11px}
+    .job-item .elapsed{font-variant-numeric:tabular-nums}
+    .job-item .stalled{color:#ef4444;font-weight:600}
+    .rt-empty{text-align:center;padding:40px;color:#8899b4;font-size:13px}
+    .rt-pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:6px;animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
     @media(max-width:700px){.g2,.g3{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
@@ -113,6 +135,7 @@
   </div>
   <div class="hdr">
     <button class="ghost sm tab-btn active" id="tabConfigBtn" onclick="switchTab('config')">⚙️ 配置</button>
+    <button class="ghost sm tab-btn" id="tabRealtimeBtn" onclick="switchTab('realtime')">🔴 实时</button>
     <button class="ghost sm tab-btn" id="tabStatsBtn" onclick="switchTab('stats')">📊 统计</button>
     <button class="ghost sm" id="envBtn" onclick="toggleEnv()" style="display:none">🔑 连接信息</button>
     <button class="green" id="saveBtn" onclick="save()" style="display:none">💾 保存</button>
@@ -180,6 +203,21 @@
       </div>
     </div>
 
+    <div id="tabRealtimeContent" style="display:none">
+      <div class="card">
+        <h2><span class="rt-pulse"></span>实时请求追踪 <span id="rtPollLabel" style="font-size:11px;color:#64748b;font-weight:400"></span></h2>
+        <div class="rt-grid" id="rtSummary">
+          <div class="rt-card"><div class="label">正在处理</div><div class="value ok" id="rtActive">0</div></div>
+          <div class="rt-card"><div class="label">排队等处理</div><div class="value" id="rtPending">0</div></div>
+          <div class="rt-card"><div class="label">发送中</div><div class="value" id="rtSending">0</div></div>
+          <div class="rt-card"><div class="label">等模型回复</div><div class="value" id="rtWaiting">0</div></div>
+          <div class="rt-card"><div class="label">接收中</div><div class="value" id="rtReceiving">0</div></div>
+        </div>
+        <div id="rtWorkers"></div>
+        <div id="rtEmpty" class="rt-empty" style="display:none">暂无活跃请求 — 所有 worker 空闲</div>
+      </div>
+    </div>
+
     <div id="tabStatsContent" style="display:none">
       <div class="card">
         <h2>📊 全局概览</h2>
@@ -190,7 +228,8 @@
           <div class="stat-card"><div class="label">总 Tokens</div><div class="value" id="statTotalTokens">-</div></div>
           <div class="stat-card"><div class="label">总流量</div><div class="value" id="statTotalTraffic">-</div></div>
           <div class="stat-card"><div class="label">平均延迟</div><div class="value" id="statAvgLatency">-</div></div>
-          <div class="stat-card"><div class="label">流量速度</div><div class="value" id="statTrafficSpeed">-</div></div>
+          <div class="stat-card"><div class="label">平均输入速度</div><div class="value" id="statAvgInputSpeed">-</div></div>
+          <div class="stat-card"><div class="label">平均输出速度</div><div class="value" id="statAvgOutputSpeed">-</div></div>
         </div>
       </div>
 
@@ -276,6 +315,9 @@ let cfg = null;
 let dirty = false;
 let sessionToken = localStorage.getItem('admin_session') || '';
 let statsTimer = null;
+let rtTimer = null;
+let currentTab = 'config';
+let hiddenPaused = false;
 
 // ── 登录 ──
 function checkLogin() {
@@ -725,9 +767,12 @@ $('pwdModal').addEventListener('click', function(e) {
 
 // ── 标签切换 ──
 function switchTab(tab) {
+  currentTab = tab;
   $('tabConfigBtn').classList.toggle('active', tab === 'config');
+  $('tabRealtimeBtn').classList.toggle('active', tab === 'realtime');
   $('tabStatsBtn').classList.toggle('active', tab === 'stats');
   $('tabConfigContent').style.display = tab === 'config' ? '' : 'none';
+  $('tabRealtimeContent').style.display = tab === 'realtime' ? '' : 'none';
   $('tabStatsContent').style.display = tab === 'stats' ? '' : 'none';
 
   var showConfigBtns = tab === 'config' && cfg;
@@ -735,12 +780,124 @@ function switchTab(tab) {
   $('addBtn').style.display = showConfigBtns ? '' : 'none';
   $('envBtn').style.display = showConfigBtns ? '' : 'none';
 
-  if (tab === 'stats') {
+  if (tab === 'realtime' && !document.hidden) {
+    loadRealtime();
+    if (!rtTimer) rtTimer = setInterval(loadRealtime, 1000);
+  } else {
+    if (rtTimer) { clearInterval(rtTimer); rtTimer = null; }
+  }
+
+  if (tab === 'stats' && !document.hidden) {
     loadStats();
     if (!statsTimer) statsTimer = setInterval(loadStats, 5000);
   } else {
     if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
   }
+}
+
+// ── 页面可见性变化时暂停/恢复轮询 ──
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) {
+    hiddenPaused = true;
+    if (rtTimer) { clearInterval(rtTimer); rtTimer = null; }
+    if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+  } else {
+    hiddenPaused = false;
+    if (currentTab === 'realtime' && !rtTimer) {
+      loadRealtime();
+      rtTimer = setInterval(loadRealtime, 1000);
+    }
+    if (currentTab === 'stats' && !statsTimer) {
+      loadStats();
+      statsTimer = setInterval(loadStats, 5000);
+    }
+  }
+});
+
+// ── 实时追踪 ──
+async function loadRealtime() {
+  try {
+    var r = await fetch('/admin/api/debug', {headers: apiHeaders()});
+    if (!r.ok) return;
+    var data = await r.json();
+    renderRealtime(data);
+  } catch(e) { /* ignore */ }
+}
+
+function renderRealtime(data) {
+  if (!data) return;
+  var totalPending = data.total_pending || 0;
+  var totalSending = data.total_sending || 0;
+  var totalWaiting = data.total_waiting || 0;
+  var totalReceiving = data.total_receiving || 0;
+  var workers = data.workers || [];
+  var totalActive = totalPending + totalSending + totalWaiting + totalReceiving;
+
+  var el = $('rtActive');
+  el.textContent = totalActive;
+  el.className = 'value ' + (totalActive > 0 ? 'busy' : 'ok');
+
+  el = $('rtPending');
+  el.textContent = totalPending;
+  el.className = 'value ' + (totalPending > 0 ? 'warn' : '');
+
+  el = $('rtSending');
+  el.textContent = totalSending;
+  el.className = 'value ' + (totalSending > 0 ? 'warn' : '');
+
+  el = $('rtWaiting');
+  el.textContent = totalWaiting;
+  el.className = 'value ' + (totalWaiting > 0 ? 'busy' : '');
+
+  el = $('rtReceiving');
+  el.textContent = totalReceiving;
+  el.className = 'value ' + (totalReceiving > 0 ? 'ok' : '');
+
+  $('rtPollLabel').textContent = '— 每秒刷新';
+
+  var box = $('rtWorkers');
+  box.innerHTML = '';
+  var hasAny = false;
+
+  for (var wi = 0; wi < workers.length; wi++) {
+    var w = workers[wi];
+    var pending = w.pending || [];
+    var active = w.active || [];
+    if (pending.length > 0 || active.length > 0) hasAny = true;
+
+    var html = '<div class="worker-row">';
+    html += '<h4>Worker ' + w.id
+      + ' <span class="pill pending">排队 ' + pending.length + '</span>'
+      + ' <span class="pill sending">发送中 ' + w.n_sending + '</span>'
+      + ' <span class="pill waiting">等回复 ' + w.n_waiting + '</span>'
+      + ' <span class="pill receiving">接收中 ' + w.n_receiving + '</span>'
+      + '</h4>';
+
+    if (pending.length > 0) {
+      html += '<div style="font-size:11px;color:#64748b;margin-bottom:4px">排队任务：</div>';
+      for (var pi = 0; pi < pending.length; pi++) {
+        var j = pending[pi];
+        var elapsed_s = (j.elapsed_ms / 1000);
+        var elapsed_cls = elapsed_s > 10 ? 'stalled' : '';
+        html += '<div class="job-item"><span><span class="model">' + esc(j.provider || '?') + ': ' + esc(j.upstream_model || '?') + '</span> <span class="meta">' + (j.stream ? '流式' : '非流式') + '</span></span><span class="meta elapsed' + (elapsed_cls ? ' stalled' : '') + '">已等 ' + elapsed_s.toFixed(1) + 's</span></div>';
+      }
+    }
+
+    if (active.length > 0) {
+      html += '<div style="font-size:11px;color:#64748b;margin-bottom:4px">活跃任务：</div>';
+      for (var ai = 0; ai < active.length; ai++) {
+        var a = active[ai];
+        var elapsed_s = (a.elapsed_ms / 1000);
+        var state_cls = a.state === '等回复' ? 'waiting' : a.state === '发送中' ? 'sending' : 'receiving';
+        html += '<div class="job-item"><span><span class="model">' + esc(a.provider || '?') + ': ' + esc(a.upstream_model || '?') + '</span> <span class="pill ' + state_cls + '">' + esc(a.state) + '</span></span><span class="meta elapsed">已 ' + elapsed_s.toFixed(1) + 's</span></div>';
+      }
+    }
+
+    html += '</div>';
+    box.innerHTML += html;
+  }
+
+  $('rtEmpty').style.display = hasAny ? 'none' : '';
 }
 
 // ── 统计 ──
@@ -775,6 +932,11 @@ function fmtSpeed(v) {
   if (v >= 1e3) return (v / 1e3).toFixed(2) + ' K/s';
   return v.toFixed(1) + '/s';
 }
+function fmtTokensPerSec(v) {
+  if (v == null || isNaN(v) || v <= 0) return '-';
+  if (v >= 1000) return (v / 1000).toFixed(2) + 'K/s';
+  return v.toFixed(1) + '/s';
+}
 
 async function loadStats() {
   try {
@@ -799,9 +961,10 @@ function renderStatsError(msg) {
   $('statTotalTokens').textContent = '!';
   $('statTotalTraffic').textContent = '!';
   $('statAvgLatency').textContent = '!';
-  $('statTrafficSpeed').textContent = '!';
+  $('statAvgInputSpeed').textContent = '!';
+  $('statAvgOutputSpeed').textContent = '!';
   // 模型表格显示错误行
-  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">输入tokens/s</th><th class="num">输出tokens/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="15" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="15" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
   $('statsChartWrap').innerHTML = '<div class="stats-empty">' + esc(msg) + '</div>';
 }
 
@@ -816,10 +979,11 @@ function renderStats(data) {
   $('statTotalTokens').textContent = fmtNum((g.total_input_tokens || 0) + (g.total_output_tokens || 0));
   $('statTotalTraffic').textContent = fmtBytes(g.total_bytes);
   $('statAvgLatency').textContent = fmtMs(g.avg_latency_ms);
-  $('statTrafficSpeed').textContent = fmtSpeed(g.traffic_speed);
+  $('statAvgInputSpeed').textContent = fmtTokensPerSec(g.avg_input_tokens_per_sec);
+  $('statAvgOutputSpeed').textContent = fmtTokensPerSec(g.avg_output_tokens_per_sec);
 
   // 模型统计 - 先确保表格结构存在
-  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">输入tokens/s</th><th class="num">输出tokens/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table></div>';
+  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table></div>';
   var tbody = $('statsModelsBody');
   tbody.innerHTML = '';
   var models = data.models || [];
@@ -840,8 +1004,8 @@ function renderStats(data) {
         '<td class="num">' + fmtNum(m.input_tokens) + '</td>' +
         '<td class="num">' + fmtNum(m.output_tokens) + '</td>' +
         '<td class="num">' + fmtBytes(m.response_bytes) + '</td>' +
-        '<td class="num">' + fmtSpeed(m.input_token_speed) + '</td>' +
-        '<td class="num">' + fmtSpeed(m.output_token_speed) + '</td>' +
+        '<td class="num">' + fmtTokensPerSec(m.avg_input_tokens_per_sec) + '</td>' +
+        '<td class="num">' + fmtTokensPerSec(m.avg_output_tokens_per_sec) + '</td>' +
         '<td class="num">' + fmtMs(m.avg_latency_ms) + '</td>' +
         '<td class="num">' + fmtMs(m.min_latency_ms) + '</td>' +
         '<td class="num">' + fmtMs(m.max_latency_ms) + '</td>';

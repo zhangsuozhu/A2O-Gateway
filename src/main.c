@@ -26,6 +26,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "types.h"
 #include "log.h"
@@ -35,6 +38,16 @@
 #include "worker.h"
 #include "handlers.h"
 #include "stats.h"
+
+/* ====================================================================
+ * 精灵模式（daemon）相关常量
+ * ==================================================================== */
+
+/** @brief PID 文件路径 */
+#define DAEMON_PID_FILE "/var/run/cc-oai-gateway.pid"
+
+/** @brief 默认日志文件路径 */
+#define DEFAULT_LOG_FILE "/var/log/cc-oai-gateway.log"
 
 /*
  * 以下全局变量在本文件定义，在 types.h 中声明为 extern，
@@ -75,6 +88,124 @@ static void on_signal(evutil_socket_t sig, short events, void *arg) {
 }
 
 /**
+ * @brief SIGHUP 信号处理回调 — 用于日志轮转
+ * @param sig     信号编号
+ * @param events  libevent 事件标志（未使用）
+ * @param arg     用户参数（未使用）
+ *
+ * 收到 SIGHUP 后调用 log_rotate() 重新打开日志文件。
+ * 配合 logrotate 使用：logrotate 移动旧日志后发送 SIGHUP，
+ * 程序自动打开新的日志文件，无需重启。
+ */
+static void on_sighup(evutil_socket_t sig, short events, void *arg) {
+    (void)sig; (void)events; (void)arg;
+    log_rotate();
+    log_msg("INFO", "log file rotated (SIGHUP)");
+}
+
+/* ====================================================================
+ * PID 文件管理
+ * ==================================================================== */
+
+/**
+ * @brief 写入 PID 文件
+ * @param path PID 文件路径
+ * @return 成功返回 0，失败返回 -1
+ *
+ * 以原子方式写入当前进程 PID。若文件已存在，先检查是否为僵尸进程，
+ * 若是则覆盖；若不是则返回错误避免误杀其他进程。
+ */
+static int write_pid_file(const char *path) {
+    /* 检查是否已有进程持有 PID 文件 */
+    FILE *f = fopen(path, "r");
+    if (f) {
+        long existing_pid = 0;
+        if (fscanf(f, "%ld", &existing_pid) == 1 && existing_pid > 0) {
+            /* 检查该 PID 是否仍在运行（不能 kill 则说明已退出） */
+            if (kill((pid_t)existing_pid, 0) == 0) {
+                fprintf(stderr, "pid file %s exists and process %ld is running\n", path, existing_pid);
+                fclose(f);
+                return -1;
+            }
+        }
+        fclose(f);
+    }
+
+    f = fopen(path, "w");
+    if (!f) return -1;
+    fprintf(f, "%d\n", (int)getpid());
+    fclose(f);
+    return 0;
+}
+
+/**
+ * @brief 删除 PID 文件
+ * @param path PID 文件路径
+ */
+static void remove_pid_file(const char *path) {
+    unlink(path);
+}
+
+/* ====================================================================
+ * 精灵模式（daemon）
+ * ==================================================================== */
+
+/**
+ * @brief 将当前进程转为后台精灵进程
+ *
+ * 采用标准双 fork 方式实现 daemon 化：
+ *   1. 第一次 fork：子进程继续，父进程退出（脱离终端控制）
+ *   2. setsid()：创建新会话，成为会话首进程（脱离原控制终端）
+ *   3. 第二次 fork：进一步确保进程不能打开控制终端
+ *   4. 重定向 stdin/stdout/stderr 到 /dev/null
+ *   5. .umask 设为 0，避免文件权限限制
+ *   6. 写入 PID 文件
+ *
+ * 父进程直接 exit(0)，子进程继续执行后续初始化。
+ */
+static void daemon_fork(void) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed: %m\n");
+        exit(1);
+    }
+    if (pid > 0) {
+        /* 父进程直接退出，返回子进程 PID */
+        printf("daemon started (pid %d)\n", (int)pid);
+        exit(0);
+    }
+
+    /* 子进程：创建新会话 */
+    if (setsid() < 0) {
+        fprintf(stderr, "setsid failed: %m\n");
+        exit(1);
+    }
+
+    /* 第二次 fork 防止打开控制终端 */
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "second fork failed: %m\n");
+        exit(1);
+    }
+    if (pid > 0) {
+        exit(0); /* 第一子进程退出 */
+    }
+
+    /* 清理环境 */
+    umask(0);
+    /* 重定向标准文件描述符到 /dev/null */
+    { FILE *f = freopen("/dev/null", "r", stdin); (void)f; }
+    { FILE *f = freopen("/dev/null", "w", stdout); (void)f; }
+    { FILE *f = freopen("/dev/null", "w", stderr); (void)f; }
+
+    /* 写入 PID 文件 */
+    if (write_pid_file(DAEMON_PID_FILE) != 0) {
+        fprintf(stderr, "failed to write pid file: %s\n", DAEMON_PID_FILE);
+        exit(1);
+    }
+}
+
+/**
  * @brief 主函数
  * @param argc 命令行参数个数
  * @param argv 命令行参数数组
@@ -108,14 +239,38 @@ static void on_signal(evutil_socket_t sig, short events, void *arg) {
 int main(int argc, char **argv) {
     const char *config_path = getenv("GATEWAY_CONFIG");
     if (!config_path) config_path = DEFAULT_CONFIG_PATH;
-    if (argc > 1) config_path = argv[1];
+    bool daemon_mode = false;
+    /* 解析命令行参数：第一个非配置路径参数为 --daemon */
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--daemon") == 0 || strcmp(argv[i], "-d") == 0) {
+            daemon_mode = true;
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            fprintf(stderr, "Usage: cc-oai-gateway [OPTIONS] [CONFIG_PATH]\n");
+            fprintf(stderr, "  --daemon, -d    Run as background daemon, log to /var/log\n");
+            fprintf(stderr, "  --help, -h      Show this help\n");
+            fprintf(stderr, "  CONFIG_PATH     JSON config file (default: %s)\n", DEFAULT_CONFIG_PATH);
+            return 0;
+        } else {
+            config_path = argv[i];
+        }
+    }
     srand((unsigned int)time(NULL));
     signal(SIGPIPE, SIG_IGN);
     if (evthread_use_pthreads() != 0) { fprintf(stderr, "evthread_use_pthreads failed\n"); return 1; }
     curl_global_init(CURL_GLOBAL_DEFAULT);
     config_load(config_path);
     stats_init();
-    log_open("gateway.log");
+
+    /* 从配置读取 log_file，默认使用 gateway.log（兼容旧版）或 /var/log 路径 */
+    char *log_file = config_get_string_copy("log_file");
+    const char *log_path = log_file ? log_file : "gateway.log";
+    log_open(log_path);
+    free(log_file);
+
+    /* 精灵模式：fork 到后台运行 */
+    if (daemon_mode) {
+        daemon_fork();
+    }
 
     char *host = config_get_string_copy("listen_host");
     long port = 8080;
@@ -140,8 +295,10 @@ int main(int argc, char **argv) {
     }
     struct event *sigint_ev = evsignal_new(BASE, SIGINT, on_signal, NULL);
     struct event *sigterm_ev = evsignal_new(BASE, SIGTERM, on_signal, NULL);
+    struct event *sighup_ev = evsignal_new(BASE, SIGHUP, on_sighup, NULL);
     event_add(sigint_ev, NULL);
     event_add(sigterm_ev, NULL);
+    event_add(sighup_ev, NULL);
     log_msg("INFO", "Claude-Code OpenAI-compatible gateway listening on http://%s:%ld", host ? host : "0.0.0.0", port);
     log_msg("INFO", "admin UI: http://%s:%ld/admin", host ? host : "127.0.0.1", port);
     log_msg("INFO", "log_level=%s realtime_print=%s",
@@ -154,11 +311,13 @@ int main(int argc, char **argv) {
     evhttp_free(HTTP);
     event_free(sigint_ev);
     event_free(sigterm_ev);
+    event_free(sighup_ev);
     event_base_free(BASE);
     /* Cleanup config via a one-shot */
     char *json = config_masked_json();
     free(json);
     curl_global_cleanup();
     log_open(NULL);
+    remove_pid_file(DAEMON_PID_FILE);
     return 0;
 }

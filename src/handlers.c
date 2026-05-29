@@ -338,6 +338,7 @@ static void handle_messages(struct evhttp_request *req) {
     job->request_body = oai_body;
     job->upstream_url = url;
     job->api_key = xstrdup(api_key ? api_key : "");
+    job->user_agent = xstrdup(header_get(req, "User-Agent"));
     job->provider_name = xstrdup(provider ? provider : "openai-compatible");
     job->client_model = xstrdup(client_model ? client_model : "claude-code-gateway");
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
@@ -572,6 +573,56 @@ static void handle_stats_reset(struct evhttp_request *req) {
 }
 
 /**
+ * @brief 实时调试信息（/admin/api/debug GET）
+ * @param req HTTP 请求对象
+ *
+ * 返回所有 worker 的实时状态：
+ *   - 每个 worker 的 pending 队列（模型、已等待时间、是否流式）；
+ *   - active_jobs：正在 curl 中传输的任务数；
+ *   - still_running：libcurl 报告的活动连接数；
+ *   - 全局 active_requests（来自 stats 模块）。
+ * 需要管理员认证。
+ */
+static void handle_debug(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    cJSON *root = cJSON_CreateObject();
+    cJSON *stats = stats_get_json();
+    if (stats) {
+        cJSON_AddItemToObject(root, "stats", stats);
+    }
+    cJSON *workers = workers_get_debug_info();
+    cJSON_AddItemToObject(root, "workers", workers);
+
+    /* 计算全局摘要 */
+    int total_pending = 0, total_sending = 0, total_waiting = 0, total_receiving = 0;
+    cJSON *w;
+    cJSON_ArrayForEach(w, workers) {
+        cJSON *p = cJSON_GetObjectItemCaseSensitive(w, "pending_len");
+        if (cJSON_IsNumber(p)) total_pending += (int)p->valuedouble;
+        cJSON *s = cJSON_GetObjectItemCaseSensitive(w, "n_sending");
+        if (cJSON_IsNumber(s)) total_sending += (int)s->valuedouble;
+        cJSON *w2 = cJSON_GetObjectItemCaseSensitive(w, "n_waiting");
+        if (cJSON_IsNumber(w2)) total_waiting += (int)w2->valuedouble;
+        cJSON *r = cJSON_GetObjectItemCaseSensitive(w, "n_receiving");
+        if (cJSON_IsNumber(r)) total_receiving += (int)r->valuedouble;
+    }
+    cJSON_AddNumberToObject(root, "total_pending", total_pending);
+    cJSON_AddNumberToObject(root, "total_sending", total_sending);
+    cJSON_AddNumberToObject(root, "total_waiting", total_waiting);
+    cJSON_AddNumberToObject(root, "total_receiving", total_receiving);
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add_printf(out, "%s", json ? json : "{}");
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "application/json; charset=utf-8");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+    free(json);
+}
+
+/**
  * @brief 返回管理后台 HTML 页面
  * @param req HTTP 请求对象
  *
@@ -653,6 +704,7 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/admin/api/switch")) { handle_switch(req); return; }
     if (URI_IS("/admin/api/stats") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_stats(req); return; }
     if (URI_IS("/admin/api/stats/reset") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_stats_reset(req); return; }
+    if (URI_IS("/admin/api/debug") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_debug(req); return; }
 #undef URI_IS
     send_error_json(req, 404, "not_found", "not found");
 }

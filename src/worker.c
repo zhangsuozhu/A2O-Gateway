@@ -246,6 +246,11 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
  *   - HTTPHEADER: 包含 Content-Type、Accept 以及 Authorization Bearer token。
  */
 static void worker_add_easy(worker_t *w, gateway_job_t *job) {
+    job->job_state = JOB_SENDING;
+    job->active_next = NULL;
+    if (w->active_tail) w->active_tail->active_next = job;
+    else w->active_head = job;
+    w->active_tail = job;
     job->easy = curl_easy_init();
     curl_easy_setopt(job->easy, CURLOPT_URL, job->upstream_url);
     curl_easy_setopt(job->easy, CURLOPT_POST, 1L);
@@ -267,6 +272,11 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
     job->headers = NULL;
     job->headers = curl_slist_append(job->headers, "Content-Type: application/json");
     job->headers = curl_slist_append(job->headers, "Accept: application/json, text/event-stream");
+    if (job->user_agent && *job->user_agent) {
+        char ua[512];
+        snprintf(ua, sizeof(ua), "User-Agent: %s", job->user_agent);
+        job->headers = curl_slist_append(job->headers, ua);
+    }
     if (job->api_key && *job->api_key) {
         char auth[4096];
         snprintf(auth, sizeof(auth), "Authorization: Bearer %s", job->api_key);
@@ -331,6 +341,21 @@ static void *worker_loop(void *arg) {
                 curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &job);
                 curl_multi_remove_handle(w->multi, msg->easy_handle);
                 if (job) {
+                    /* 从活跃列表移除 */
+                    pthread_mutex_lock(&w->mu);
+                    {
+                        gateway_job_t **pp = &w->active_head;
+                        while (*pp) {
+                            if (*pp == job) {
+                                *pp = job->active_next;
+                                if (!job->active_next) w->active_tail = NULL;
+                                job->active_next = NULL;
+                                break;
+                            }
+                            pp = &(*pp)->active_next;
+                        }
+                    }
+                    pthread_mutex_unlock(&w->mu);
                     if (job->stream) complete_stream_job(job, msg->data.result);
                     else complete_nonstream_job(job, msg->data.result);
                     event_base_once(BASE, -1, EV_TIMEOUT, deferred_job_free, job, NULL);
@@ -353,6 +378,86 @@ static void *worker_loop(void *arg) {
  * 可能正在休眠的 worker 线程。该函数可在任意线程调用（通常由
  * libevent HTTP 请求处理线程调用）。
  */
+/* ====================================================================
+ * 实时调试信息
+ * ==================================================================== */
+
+/**
+ * @brief 获取所有 worker 的实时调试信息
+ * @return cJSON 数组，每个元素包含一个 worker 的状态（调用者需 cJSON_Delete）
+ *
+ * 遍历所有 worker，对每个 worker 加锁后收集：
+ *   - pending 队列长度及每个待处理任务的模型、已等待时间、是否流式；
+ *   - active_jobs：当前正在 curl 中传输的任务数；
+ *   - still_running：libcurl multi 报告的活动连接数。
+ * 该函数在 libevent 主线程调用（admin API 请求），不会阻塞 worker。
+ */
+cJSON *workers_get_debug_info(void) {
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < WORKER_COUNT; i++) {
+        cJSON *wobj = cJSON_CreateObject();
+        cJSON_AddNumberToObject(wobj, "id", i);
+        worker_t *w = &WORKERS[i];
+        pthread_mutex_lock(&w->mu);
+
+        /* 遍历 pending 队列 */
+        int pending_len = 0;
+        cJSON *pending = cJSON_CreateArray();
+        gateway_job_t *j = w->pending_head;
+        while (j) {
+            cJSON *jobj = cJSON_CreateObject();
+            cJSON_AddStringToObject(jobj, "model", j->client_model ? j->client_model : "?");
+            cJSON_AddStringToObject(jobj, "upstream_model", j->upstream_model ? j->upstream_model : "?");
+            cJSON_AddStringToObject(jobj, "provider", j->provider_name ? j->provider_name : "?");
+            cJSON_AddBoolToObject(jobj, "stream", j->stream);
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            double secs = (now.tv_sec - j->start_time.tv_sec) + (now.tv_nsec - j->start_time.tv_nsec) / 1e9;
+            cJSON_AddNumberToObject(jobj, "elapsed_ms", secs * 1000.0);
+            cJSON_AddItemToArray(pending, jobj);
+            pending_len++;
+            j = j->next;
+        }
+        cJSON_AddItemToObject(wobj, "pending", pending);
+        cJSON_AddNumberToObject(wobj, "pending_len", pending_len);
+
+        /* 遍历活跃任务，按状态计数 */
+        int n_sending = 0, n_waiting = 0, n_receiving = 0;
+        cJSON *active = cJSON_CreateArray();
+        j = w->active_head;
+        while (j) {
+            switch (j->job_state) {
+                case JOB_SENDING: n_sending++; break;
+                case JOB_WAITING: n_waiting++; break;
+                case JOB_RECEIVING: n_receiving++; break;
+            }
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            double secs = (now.tv_sec - j->start_time.tv_sec) + (now.tv_nsec - j->start_time.tv_nsec) / 1e9;
+
+            cJSON *ajobj = cJSON_CreateObject();
+            cJSON_AddStringToObject(ajobj, "model", j->client_model ? j->client_model : "?");
+            cJSON_AddStringToObject(ajobj, "upstream_model", j->upstream_model ? j->upstream_model : "?");
+            cJSON_AddStringToObject(ajobj, "provider", j->provider_name ? j->provider_name : "?");
+            const char *state_str = j->job_state == JOB_SENDING ? "发送中"
+                                                  : j->job_state == JOB_WAITING ? "等回复"
+                                                                                : "接收中";
+            cJSON_AddStringToObject(ajobj, "state", state_str);
+            cJSON_AddNumberToObject(ajobj, "elapsed_ms", secs * 1000.0);
+            cJSON_AddItemToArray(active, ajobj);
+            j = j->active_next;
+        }
+        cJSON_AddItemToObject(wobj, "active", active);
+        cJSON_AddNumberToObject(wobj, "n_sending", n_sending);
+        cJSON_AddNumberToObject(wobj, "n_waiting", n_waiting);
+        cJSON_AddNumberToObject(wobj, "n_receiving", n_receiving);
+
+        pthread_mutex_unlock(&w->mu);
+        cJSON_AddItemToArray(arr, wobj);
+    }
+    return arr;
+}
+
 void enqueue_job(gateway_job_t *job) {
     worker_t *w = &WORKERS[(RR++) % WORKER_COUNT];
     job->worker = w;
@@ -374,6 +479,7 @@ void enqueue_job(gateway_job_t *job) {
 void workers_start(void) {
     for (int i = 0; i < WORKER_COUNT; i++) {
         WORKERS[i].id = i;
+        WORKERS[i].active_head = WORKERS[i].active_tail = NULL;
         pthread_mutex_init(&WORKERS[i].mu, NULL);
         pthread_cond_init(&WORKERS[i].cv, NULL);
         pthread_create(&WORKERS[i].tid, NULL, worker_loop, &WORKERS[i]);
@@ -420,6 +526,7 @@ void job_free(gateway_job_t *job) {
     free(job->request_body); job->request_body = NULL;
     free(job->upstream_url); job->upstream_url = NULL;
     free(job->api_key); job->api_key = NULL;
+    free(job->user_agent); job->user_agent = NULL;
     free(job->provider_name); job->provider_name = NULL;
     free(job->client_model); job->client_model = NULL;
     free(job->upstream_model); job->upstream_model = NULL;

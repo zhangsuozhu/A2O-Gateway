@@ -13,6 +13,7 @@
 #define WORKER_H
 
 #include "types.h"
+#include <cjson/cJSON.h>
 
 /**
  * @brief 将任务入队到工作线程池
@@ -53,5 +54,11 @@ void workers_stop(void);
  * 延迟到 libevent 主线程执行 evhttp_request_free，避免跨线程释放。
  */
 void job_free(gateway_job_t *job);
+
+/**
+ * @brief 获取所有 worker 的实时调试信息
+ * @return cJSON 数组（调用者需 cJSON_Delete）
+ */
+cJSON *workers_get_debug_info(void);
 
 #endif

@@ -40,6 +40,9 @@ typedef struct model_stat_entry {
     uint64_t latency_count;
     double min_latency_ms;
     double max_latency_ms;
+    double total_input_speed;   /* 每次请求 input_tokens/耗时 的累加 */
+    double total_output_speed;  /* 每次请求 output_tokens/耗时 的累加 */
+    uint64_t speed_count;       /* 参与速度统计的请求数 */
     uint64_t http_4xx;
     uint64_t http_5xx;
     uint64_t curl_errors;
@@ -77,6 +80,11 @@ typedef struct gateway_stats {
     uint64_t latency_count;
     double min_latency_ms;
     double max_latency_ms;
+
+    /* 每次请求的 token 速度累加（用于计算平均速度） */
+    double total_input_speed;
+    double total_output_speed;
+    uint64_t speed_count;
     
     /* 错误统计 */
     uint64_t http_4xx_count;

@@ -748,6 +748,7 @@ void stream_parse_append(gateway_job_t *job, const char *ptr, size_t n) {
 size_t curl_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
     gateway_job_t *job = (gateway_job_t *)userdata;
     size_t n = size * nmemb;
+    if (job->job_state != JOB_RECEIVING) job->job_state = JOB_RECEIVING;
     /* 始终累积上游响应体，用于日志记录 */
     membuf_append(&job->upstream_body, ptr, n);
     if (job->stream) {
@@ -772,6 +773,7 @@ size_t curl_header_cb(char *buffer, size_t size, size_t nitems, void *userdata) 
     gateway_job_t *job = (gateway_job_t *)userdata;
     size_t n = size * nitems;
     job->upstream_headers_done = true;
+    job->job_state = JOB_WAITING;
     size_t hn = n;
     while (hn > 0 && (buffer[hn-1] == '\r' || buffer[hn-1] == '\n')) hn--;
     if (hn > 0 && hn < 512)

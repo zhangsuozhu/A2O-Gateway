@@ -141,4 +141,13 @@ void rt_extract_text_from_json(cJSON *j, membuf_t *out, const char *label);
  */
 void rt_print_json(const char *tag, const char *body);
 
+/**
+ * @brief 旋转日志文件（响应 SIGHUP 信号）
+ *
+ * 关闭当前日志文件并重新打开，用于日志轮转场景。
+ * 例如 logrotate 移动 gateway.log → gateway.log.1 后发送 SIGHUP，
+ * 程序重新打开文件，产生新的 gateway.log。
+ */
+void log_rotate(void);
+
 #endif /* LOG_H */

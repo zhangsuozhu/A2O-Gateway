@@ -170,6 +170,18 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
         }
     }
 
+    /* 每次请求的 token 速度累加 */
+    if (latency_ms > 0) {
+        double sec = latency_ms / 1000.0;
+        double inp_speed = (double)input_tokens / sec;
+        double out_speed = (double)output_tokens / sec;
+        if (inp_speed > 0 || out_speed > 0) {
+            G_STATS.total_input_speed += inp_speed;
+            G_STATS.total_output_speed += out_speed;
+            G_STATS.speed_count++;
+        }
+    }
+
     /* 模型统计 */
     model_stat_entry_t *entry = get_model_entry(model, provider);
     entry->total_response_bytes += response_bytes;
@@ -195,6 +207,18 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
         }
         if (latency_ms > entry->max_latency_ms) {
             entry->max_latency_ms = latency_ms;
+        }
+    }
+
+    /* 每次请求的 token 速度累加 */
+    if (latency_ms > 0) {
+        double sec = latency_ms / 1000.0;
+        double inp_speed = (double)input_tokens / sec;
+        double out_speed = (double)output_tokens / sec;
+        if (inp_speed > 0 || out_speed > 0) {
+            entry->total_input_speed += inp_speed;
+            entry->total_output_speed += out_speed;
+            entry->speed_count++;
         }
     }
 
@@ -242,6 +266,12 @@ static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double window
     cJSON_AddNumberToObject(obj, "avg_latency_ms", avg_latency);
     cJSON_AddNumberToObject(obj, "min_latency_ms", entry->min_latency_ms >= 0 ? entry->min_latency_ms : 0.0);
     cJSON_AddNumberToObject(obj, "max_latency_ms", entry->max_latency_ms);
+
+    /* 每次请求 token 速度的平均值 */
+    double avg_in_speed = (entry->speed_count > 0) ? (entry->total_input_speed / entry->speed_count) : 0.0;
+    double avg_out_speed = (entry->speed_count > 0) ? (entry->total_output_speed / entry->speed_count) : 0.0;
+    cJSON_AddNumberToObject(obj, "avg_input_tokens_per_sec", avg_in_speed);
+    cJSON_AddNumberToObject(obj, "avg_output_tokens_per_sec", avg_out_speed);
     cJSON_AddNumberToObject(obj, "http_4xx", (double)entry->http_4xx);
     cJSON_AddNumberToObject(obj, "http_5xx", (double)entry->http_5xx);
     cJSON_AddNumberToObject(obj, "curl_errors", (double)entry->curl_errors);
@@ -309,6 +339,12 @@ cJSON *stats_get_json(void) {
     cJSON_AddNumberToObject(overview, "avg_latency_ms", avg_latency);
     cJSON_AddNumberToObject(overview, "min_latency_ms", G_STATS.min_latency_ms >= 0 ? G_STATS.min_latency_ms : 0.0);
     cJSON_AddNumberToObject(overview, "max_latency_ms", G_STATS.max_latency_ms);
+
+    /* 每次请求 token 速度的平均值 */
+    double avg_in_speed = (G_STATS.speed_count > 0) ? (G_STATS.total_input_speed / G_STATS.speed_count) : 0.0;
+    double avg_out_speed = (G_STATS.speed_count > 0) ? (G_STATS.total_output_speed / G_STATS.speed_count) : 0.0;
+    cJSON_AddNumberToObject(overview, "avg_input_tokens_per_sec", avg_in_speed);
+    cJSON_AddNumberToObject(overview, "avg_output_tokens_per_sec", avg_out_speed);
 
     /* 速度统计（基于滑动窗口） */
     double uptime = (double)(time(NULL) - G_STATS.start_time);

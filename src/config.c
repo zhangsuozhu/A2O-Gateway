@@ -11,6 +11,7 @@
 
 #include "config.h"
 #include "log.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -97,6 +98,7 @@ static cJSON *default_config(void) {
         "{"
         "\"listen_host\":\"0.0.0.0\","
         "\"listen_port\":8080,"
+        "\"log_file\":\"/var/log/cc-oai-gateway.log\","
         "\"log_level\":\"info\","
         "\"realtime_print\":\"false\","
         "\"gateway_api_key\":\"cc-local-token\","
@@ -121,12 +123,32 @@ static cJSON *default_config(void) {
 }
 
 /**
+ * str_eq_trim() — 比较两个字符串，忽略首尾空白字符
+ * @param a: 字符串 a
+ * @param b: 字符串 b
+ * @return: trim 后内容相同返回 true，否则 false
+ */
+static bool str_eq_trim(const char *a, const char *b) {
+    if (!a || !b) return a == b;
+    while (isspace((unsigned char)*a)) a++;
+    while (isspace((unsigned char)*b)) b++;
+    const char *ea = a + strlen(a) - 1;
+    const char *eb = b + strlen(b) - 1;
+    while (ea >= a && isspace((unsigned char)*ea)) ea--;
+    while (eb >= b && isspace((unsigned char)*eb)) eb--;
+    size_t la = (size_t)(ea - a + 1);
+    size_t lb = (size_t)(eb - b + 1);
+    if (la != lb) return false;
+    return strncmp(a, b, la) == 0;
+}
+
+/**
  * find_model_by_id() — 在配置中按模型 ID 查找模型对象
  * @param root: 配置树根节点
  * @param id:   要查找的模型 ID
  * @return: 找到的模型 cJSON 对象指针，未找到返回 NULL
  *
- * 遍历 root->models 数组，进行大小写敏感的字符串比较
+ * 遍历 root->models 数组，进行大小写敏感的字符串比较（忽略首尾空格）
  */
 static cJSON *find_model_by_id(cJSON *root, const char *id) {
     cJSON *models = cJSON_GetObjectItemCaseSensitive(root, "models");
@@ -136,7 +158,7 @@ static cJSON *find_model_by_id(cJSON *root, const char *id) {
     cJSON *m;
     cJSON_ArrayForEach(m, models) {
         const char *mid = json_get_str(m, "id");
-        if (mid && strcmp(mid, id) == 0 && json_get_bool(m, "enabled", true)) {
+        if (mid && str_eq_trim(mid, id) && json_get_bool(m, "enabled", true)) {
             long priority;
             // 支持数字和字符串两种格式的 priority
             cJSON *pv = cJSON_GetObjectItemCaseSensitive(m, "priority");
