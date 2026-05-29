@@ -233,7 +233,6 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
   "log_level": "info",
   "realtime_print": "false",
   "gateway_api_key": "Claude Code 访问本网关的 token",
-  "admin_token": "Web 管理界面 token（与 admin_password 同步）",
   "admin_password": "Web 管理界面登录密码",
   "worker_threads": 4,
   "active_model": "默认模型 id",
@@ -270,7 +269,6 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 | `log_level` | 顶层 | string | 日志级别：`debug`/`info`/`warn`/`error` |
 | `realtime_print` | 顶层 | string | 实时输出模式：`"false"` 关闭、`"all"` 完整 JSON、`"txt"` 纯文本（仅提取对话内容） |
 | `gateway_api_key` | 顶层 | string | Claude Code 认证凭据 |
-| `admin_token` | 顶层 | string | Web 管理界面认证凭据（与 admin_password 同步） |
 | `admin_password` | 顶层 | string | Web 管理界面登录密码，通过 UI 登录后获取 session |
 | `worker_threads` | 顶层 | number | 工作线程数，范围 1-8 |
 | `active_model` | 顶层 | string | 默认模型 ID |
@@ -333,7 +331,7 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 ## 生产部署建议
 
 - 不要把 Web 管理界面直接暴露到公网；放在内网或反向代理后面。
-- `admin_token`、`admin_password` 和 `gateway_api_key` 使用高强度随机值。
+- `admin_password` 和 `gateway_api_key` 使用高强度随机值。
 - 配置文件权限建议 `chmod 600 config/gateway.local.json`。
 - 在反向代理层启用 TLS、访问日志、限流、IP 白名单。
 - 如需团队使用，建议把 API Key 加密存储，或改接 Vault/KMS。
