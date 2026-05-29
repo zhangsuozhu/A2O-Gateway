@@ -1,25 +1,75 @@
 {
 	"listen_host":	"0.0.0.0",
-	"listen_port":	8080,
-	"log_level":	"info",
+	"listen_port":	8081,
+	"log_level":	"debug",
 	"realtime_print":	"false",
 	"gateway_api_key":	"cc-local-token",
-	"admin_token":	"admin-local-token",
 	"worker_threads":	4,
-	"active_model":	"deepseek-coder",
 	"models":	[{
-			"id":	"deepseek-coder",
-			"provider":	"deepseek-openai-compatible",
-			"priority":	100,
-			"enabled":	false,
-			"base_url":	"https://api.deepseek.com/v1",
+			"id":	"claude-opus-4-7",
+			"provider":	"sensenova",
+			"priority":	10,
+			"enabled":	true,
+			"base_url":	"https://token.sensenova.cn/v1",
 			"endpoint":	"",
-			"upstream_model":	"deepseek-chat",
+			"api_key":	"Your-api-key",
+			"upstream_model":	"deepseek-v4-flash",
 			"extra_body":	{
 			},
 			"params":	{
-				"temperature":	0.2
+				"temperature":	0.2,
+				"top_p":	0.95,
+				"max_tokens":	1000000
+			}
+		}, {
+			"id":	"claude-opus-4-7",
+			"provider":	"opencode-go",
+			"priority":	100,
+			"enabled":	true,
+			"base_url":	"https://opencode.ai/zen/go/v1",
+			"endpoint":	"",
+			"api_key":	"Your-api-key",
+			"upstream_model":	"mimo-v2.5-pro",
+			"extra_body":	{
 			},
-			"api_key":	"YOUR_DEEPSEEK_API_KEY"
-		}]
+			"params":	{
+				"temperature":	0.2,
+				"top_p":	0.95,
+				"max_tokens":	1000000
+			}
+		}, {
+			"id":	"qwen3.7-max",
+			"provider":	"opencode-go",
+			"priority":	100,
+			"enabled":	true,
+			"base_url":	"https://opencode.ai/zen/go/v1",
+			"endpoint":	"",
+			"api_key":	"Your-api-key",
+			"upstream_model":	"qwen3.7-max",
+			"extra_body":	{
+			},
+			"params":	{
+				"temperature":	0.2,
+				"top_p":	0.95,
+				"max_tokens":	1000000
+			}
+		}, {
+			"id":	"claude-opus-4-7",
+			"provider":	"deepseek",
+			"priority":	100,
+			"enabled":	true,
+			"base_url":	"https://api.deepseek.com",
+			"endpoint":	"",
+			"api_key":	"Your-api-key",
+			"upstream_model":	"deepseek-v4-pro",
+			"extra_body":	{
+			},
+			"params":	{
+				"temperature":	0.2,
+				"top_p":	0.95,
+				"max_tokens":	1000000
+			}
+		}],
+	"active_model":	"claude-opus-4-7",
+	"admin_password":	"defaultpassword"
 }
