@@ -133,15 +133,25 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                 cJSON_Delete(j);
                 code_out = 502;
             } else {
-                log_msg("INFO", "RESP_OK model=%s", job->client_model);
-                json_out = cJSON_PrintUnformatted(anth);
-                cJSON *usage = cJSON_GetObjectItemCaseSensitive(anth, "usage");
-                if (usage) {
-                    input_tokens = (long)json_get_long(usage, "input_tokens", 0);
-                    output_tokens = (long)json_get_long(usage, "output_tokens", 0);
+                bool has_error = false;
+                const char *resp_type = json_get_str(anth, "type");
+                if (resp_type && strcmp(resp_type, "error") == 0) has_error = true;
+                if (has_error) {
+                    log_msg("ERROR", "UPSTREAM_ERR model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
+                    json_out = cJSON_PrintUnformatted(anth);
+                    cJSON_Delete(anth);
+                    code_out = 502;
+                } else {
+                    log_msg("INFO", "RESP_OK model=%s", job->client_model);
+                    json_out = cJSON_PrintUnformatted(anth);
+                    cJSON *usage = cJSON_GetObjectItemCaseSensitive(anth, "usage");
+                    if (usage) {
+                        input_tokens = (long)json_get_long(usage, "input_tokens", 0);
+                        output_tokens = (long)json_get_long(usage, "output_tokens", 0);
+                    }
+                    cJSON_Delete(anth);
+                    code_out = 200;
                 }
-                cJSON_Delete(anth);
-                code_out = 200;
             }
         }
     }

@@ -546,6 +546,24 @@ cJSON *convert_openai_response_to_anthropic(const char *body, const char *client
         cJSON_AddItemToObject(err, "error", e);
         return err;
     }
+    /* 检测上游返回的业务错误（即使 HTTP 状态码是 200） */
+    cJSON *upstream_err = cJSON_GetObjectItemCaseSensitive(oai, "error");
+    if (upstream_err) {
+        const char *err_msg = json_get_str(upstream_err, "message");
+        if (!err_msg) err_msg = json_get_str(oai, "error");
+        if (!err_msg) err_msg = "upstream returned an error";
+        cJSON *err = cJSON_CreateObject();
+        cJSON_AddStringToObject(err, "type", "error");
+        cJSON *e = cJSON_CreateObject();
+        cJSON_AddStringToObject(e, "type", "upstream_error");
+        cJSON_AddStringToObject(e, "message", err_msg);
+        /* 透传上游 error.code */
+        const char *err_code = json_get_str(upstream_err, "code");
+        if (err_code) cJSON_AddStringToObject(e, "code", err_code);
+        cJSON_AddItemToObject(err, "error", e);
+        cJSON_Delete(oai);
+        return err;
+    }
     cJSON *choices = cJSON_GetObjectItemCaseSensitive(oai, "choices");
     cJSON *choice = cJSON_IsArray(choices) ? cJSON_GetArrayItem(choices, 0) : NULL;
     cJSON *msg = choice ? cJSON_GetObjectItemCaseSensitive(choice, "message") : NULL;
