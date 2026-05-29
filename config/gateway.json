@@ -10,7 +10,7 @@
 	"models":	[{
 			"id":	"deepseek-coder",
 			"provider":	"deepseek-openai-compatible",
-			"display_name":	"DeepSeek Coder",
+			"priority":	100,
 			"enabled":	false,
 			"base_url":	"https://api.deepseek.com/v1",
 			"endpoint":	"",

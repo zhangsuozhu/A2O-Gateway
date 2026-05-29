@@ -241,7 +241,7 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
     {
       "id": "Claude Code 侧使用的模型名",
       "provider": "厂商名，仅用于标识和日志",
-      "display_name": "Web UI 展示名称",
+      "priority": 100,
       "interface": "openai_chat_completions",
       "base_url": "OpenAI 兼容 base_url，例如 https://api.example.com/v1",
       "endpoint": "完整接口地址，可空；非空时优先使用",
@@ -276,7 +276,7 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 | `active_model` | 顶层 | string | 默认模型 ID |
 | `models[].id` | 模型 | string | Claude Code 侧使用的模型名（`--model` 参数） |
 | `models[].provider` | 模型 | string | 厂商名，仅用于日志/标识 |
-| `models[].display_name` | 模型 | string | Web UI 展示名称 |
+| `models[].priority` | 模型 | number | 优先级，0-1000，小的优先（默认100） |
 | `models[].enabled` | 模型 | bool | 是否启用，默认 `true` |
 | `models[].base_url` | 模型 | string | OpenAI 兼容接口地址 |
 | `models[].endpoint` | 模型 | string | 完整接口地址；非空时优先于 `base_url` |

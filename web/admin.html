@@ -157,6 +157,12 @@
 
       <div class="card">
         <h2>🤖 模型列表 <span id="modelCount" style="font-size:12px;font-weight:400;color:#8899b4"></span></h2>
+        <div style="background:#0e1729;border:1px solid #1e2d4a;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;line-height:1.7;color:#8899b4">
+          <div style="font-weight:600;color:#c8d2e6;margin-bottom:6px">模型选择逻辑</div>
+          <div><span style="color:#e2e8f0">请求匹配：</span>客户端请求的模型 ID → 匹配所有同 ID 且启用的模型 → 按 <code style="background:#1a2744;padding:1px 5px;border-radius:3px;color:#60a5fa">priority</code> 数值由小到大选择（0 最高，1000 最低）</div>
+          <div><span style="color:#e2e8f0">默认回退：</span>客户端未指定模型或匹配不到 → 使用 ★ <span style="color:#22c55e">当前默认</span> 指向的模型 ID</div>
+          <div><span style="color:#e2e8f0">多后端组：</span>多个模型可共享同一 ID（不同厂商/地址），用优先级实现主备切换</div>
+        </div>
         <div id="models"></div>
         <div class="empty" id="emptyHint" style="display:none">
           <p>还没有配置模型</p>
@@ -432,6 +438,7 @@ function createModel(m, i) {
   html += '  </div>';
   html += '  <div class="hdr">';
   if (!active) html += '    <button class="green sm" onclick="setActive(' + i + ')">★ 设为默认</button>';
+  if (active)  html += '    <button class="ghost sm" onclick="clearActive()">✕ 取消默认</button>';
   html += '    <button class="ghost sm" onclick="dup(' + i + ')">📋 复制</button>';
   html += '    <button class="red sm" onclick="del(' + i + ')">🗑</button>';
   html += '  </div>';
@@ -441,7 +448,7 @@ function createModel(m, i) {
   html += '<div class="g3" style="margin-bottom:6px">';
   html += '  <div><label>模型 ID</label><input class="fi" data-idx="' + i + '" data-k="id" value="' + escAttr(m.id) + '" /></div>';
   html += '  <div><label>模型厂商</label><input class="fi" data-idx="' + i + '" data-k="provider" value="' + escAttr(m.provider || '') + '" placeholder="aliyun, deepseek" /></div>';
-  html += '  <div><label>显示名称</label><input class="fi" data-idx="' + i + '" data-k="display_name" value="' + escAttr(m.display_name || '') + '" /></div>';
+  html += '  <div><label>优先级</label><input class="fi" data-idx="' + i + '" data-k="priority" value="' + escAttr(m.priority || '100') + '" type="number" min="0" max="1000" placeholder="0-1000，小的优先" /></div>';
   html += '  <div><label>状态</label><select class="fi" data-idx="' + i + '" data-k="enabled"><option value="true"' + (en?' selected':'') + '>启用</option><option value="false"' + (!en?' selected':'') + '>禁用</option></select></div>';
   html += '</div>';
 
@@ -489,6 +496,7 @@ function collectOne(i) {
     var el = fields[j];
     var k = el.getAttribute('data-k');
     if (k === 'enabled') m[k] = el.value === 'true';
+    else if (k === 'priority') m[k] = Number(el.value);
     else if (k === 'extra_body') { try { m[k] = el.value.trim() ? JSON.parse(el.value) : {}; } catch(e) {} }
     else m[k] = el.value;
   }
@@ -538,6 +546,20 @@ function setActive(i) {
     if (r.ok) toast('✅ 已切换为: ' + cfg.active_model);
     else if (r.status === 401) { checkLogin(); }
     else r.text().then(function(t) { toast('切换失败: ' + t, true); });
+  });
+}
+
+function clearActive() {
+  cfg.active_model = '';
+  renderModels();
+  fetch('/admin/api/switch', {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: JSON.stringify({active_model: ''})
+  }).then(function(r) {
+    if (r.ok) toast('已取消默认');
+    else if (r.status === 401) { checkLogin(); }
+    else r.text().then(function(t) { toast('取消失败: ' + t, true); });
   });
 }
 
@@ -638,7 +660,7 @@ function confirmAdd() {
   cfg.models.push({
     id: id,
     provider: provider,
-    display_name: provider ? provider + ' - ' + upstream_model : upstream_model,
+    priority: 100,
     interface: 'openai_chat_completions',
     base_url: base_url,
     endpoint: '',

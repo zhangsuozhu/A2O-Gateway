@@ -106,7 +106,7 @@ static cJSON *default_config(void) {
         "\"models\":[{"
           "\"id\":\"qwen-coder\","
           "\"provider\":\"aliyun-bailian\","
-          "\"display_name\":\"Qwen Coder via OpenAI Compatible\","
+          "\"priority\":100,"
           "\"interface\":\"openai_chat_completions\","
           "\"base_url\":\"https://dashscope.aliyuncs.com/compatible-mode/v1\","
           "\"endpoint\":\"\","
@@ -131,12 +131,35 @@ static cJSON *default_config(void) {
 static cJSON *find_model_by_id(cJSON *root, const char *id) {
     cJSON *models = cJSON_GetObjectItemCaseSensitive(root, "models");
     if (!cJSON_IsArray(models) || !id) return NULL;
+    cJSON *best = NULL;
+    long best_priority = 1001;  // 默认优先级（低于最大值1000）
     cJSON *m;
     cJSON_ArrayForEach(m, models) {
         const char *mid = json_get_str(m, "id");
-        if (mid && strcmp(mid, id) == 0) return m;
+        if (mid && strcmp(mid, id) == 0 && json_get_bool(m, "enabled", true)) {
+            long priority;
+            // 支持数字和字符串两种格式的 priority
+            cJSON *pv = cJSON_GetObjectItemCaseSensitive(m, "priority");
+            if (cJSON_IsNumber(pv)) {
+                priority = (long)pv->valuedouble;
+            } else if (cJSON_IsString(pv)) {
+                char *end = NULL;
+                long n = strtol(pv->valuestring, &end, 10);
+                priority = (end && *end == '\0') ? n : 1000;
+            } else {
+                priority = 1000;  // 未配置时默认最低优先级
+            }
+            // 限制范围在0-1000
+            if (priority < 0) priority = 0;
+            if (priority > 1000) priority = 1000;
+            // 选择优先级最高（数值最小）的模型
+            if (priority < best_priority) {
+                best_priority = priority;
+                best = m;
+            }
+        }
     }
-    return NULL;
+    return best;
 }
 
 /**
@@ -367,8 +390,16 @@ int config_replace_from_json(const char *body, char **err) {
  * 6. 解锁，根据写入结果返回
  */
 int config_set_active_model(const char *id, char **err) {
-    if (!id || !*id) { if (err) *err = xstrdup("missing active_model"); return -1; }
     pthread_rwlock_wrlock(&G.lock);
+    if (!id || !*id) {
+        /* 取消默认：删除 active_model 字段 */
+        cJSON_DeleteItemFromObjectCaseSensitive(G.root, "active_model");
+        char *txt = cJSON_Print(G.root);
+        int rc = write_file_atomic(G.path, txt);
+        free(txt);
+        pthread_rwlock_unlock(&G.lock);
+        return rc;
+    }
     cJSON *m = find_model_by_id(G.root, id);
     if (!m) {
         pthread_rwlock_unlock(&G.lock);

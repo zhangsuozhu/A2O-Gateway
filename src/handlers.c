@@ -387,7 +387,7 @@ static void handle_messages(struct evhttp_request *req) {
  *
  * 读取配置中所有 enabled=true 的模型，构造 Anthropic 格式的模型列表响应：
  *   { "object": "list", "data": [ { "id": ..., "type": "model", "object": "model", ... } ] }
- * 如果模型配置了 display_name 或 provider，也会一并返回。
+ * 如果模型配置了 provider，也会一并返回。
  */
 static void handle_models(struct evhttp_request *req) {
     if (!gateway_auth_ok(req)) { log_msg("WARN", "models auth failed"); send_error_json(req, 401, "authentication_error", "invalid gateway api key"); return; }
@@ -408,8 +408,6 @@ static void handle_models(struct evhttp_request *req) {
             cJSON_AddStringToObject(item, "id", id);
             cJSON_AddStringToObject(item, "type", "model");
             cJSON_AddStringToObject(item, "object", "model");
-            const char *dn = json_get_str(m, "display_name");
-            if (dn) cJSON_AddStringToObject(item, "display_name", dn);
             const char *provider = json_get_str(m, "provider");
             if (provider) cJSON_AddStringToObject(item, "provider", provider);
             cJSON_AddItemToArray(data, item);
