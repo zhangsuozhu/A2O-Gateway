@@ -35,12 +35,30 @@ export GATEWAY_CONFIG="./config/gateway.local.json"
 ./build/cc-oai-gateway
 ```
 
-### Test Commands (when gateway is running)
+### Unit Tests
+
 ```bash
+# Build and run all tests
+cmake -S . -B build && cmake --build build -j
+ctest --test-dir build --output-on-failure
+
+# Run individual test binaries directly
+./build/test_convert
+./build/test_stream
+./build/test_log
+```
+
+Test coverage: `test_convert` tests protocol conversion (Anthropic ↔ OpenAI), `test_stream` tests SSE parsing and streaming conversion, `test_log` tests realtime print text extraction (`rt_extract_text_from_json`).
+
+### Debug & Test Commands
+```bash
+# Realtime JSON print mode (set realtime_print in config to "all" or "txt")
+# "all" = full JSON dump, "txt" = text-only extraction
+
 # Health check
 curl http://127.0.0.1:8080/healthz
 
-# Non-streaming message
+# Non-streaming (use examples/ for test payloads)
 curl http://127.0.0.1:8080/v1/messages \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer cc-local-token' \
@@ -52,19 +70,22 @@ curl -N http://127.0.0.1:8080/v1/messages \
   -H 'Authorization: Bearer cc-local-token' \
   -d @examples/anthropic-stream.json
 
-# Token estimation
+# Token estimation (approximate, not real tokenizer)
 curl http://127.0.0.1:8080/v1/messages/count_tokens \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer cc-local-token' \
   -d @examples/anthropic-message.json
 
-# Run with valgrind
+# Memory check
 valgrind --leak-check=full ./build/cc-oai-gateway ./config/gateway.local.json
+
+# Convenience wrapper (auto-configures env vars)
+./cc2open --model qwen-coder
 ```
 
 ## Architecture
 
-This is a C11 gateway that translates Anthropic Messages API ↔ OpenAI Chat Completions protocol.
+This is a C11 gateway that translates Anthropic Messages API ↔ OpenAI Chat Completions protocol. 8 source files + single-file Web UI (approx. 6000+ lines total). Line counts below are approximate.
 
 ### Data Flow
 
@@ -81,26 +102,38 @@ Claude Code → HTTP POST /v1/messages (Anthropic format)
 
 ### Source Layout
 
-| File | Responsibility |
-|------|---------------|
-| `main.c` | Entry point, libevent setup, signal handling, global vars |
-| `types.h` | Shared structs (membuf_t, app_config_t, stream_state_t, gateway_job, worker_t), inline utilities |
-| `log.h/c` | Logging: level filtering, file output, realtime terminal print |
-| `config.h/c` | JSON config load/save, masked output (API keys masked with ***MASKED***), model selection |
-| `convert.h/c` | Bidirectional protocol conversion (Anthropic ↔ OpenAI), URL construction |
-| `stream.h/c` | SSE streaming parser, chunk-by-chunk conversion, client response streaming |
-| `worker.h/c` | libcurl multi worker thread pool, job queue, CURL easy handle lifecycle |
-| `stats.h/c` | Request statistics: per-model breakdown, time windows, latency tracking |
-| `handlers.h/c` | HTTP route dispatch: /v1/messages, /v1/messages/count_tokens, /healthz, /admin, etc. |
-| `web/admin.html` | Single-file Web UI for config management (served at /admin) |
+| File | Lines | Responsibility |
+|------|-------|---------------|
+| `types.h` | 491 | Shared structs (membuf_t, app_config_t, stream_state_t, gateway_job, worker_t), inline utilities, extern globals |
+| `main.c` | 163 | Entry point, libevent setup, signal handling, global var declarations |
+| `handlers.c` | 664 | HTTP route dispatch, auth, request lifecycle, admin API |
+| `stream.c` | 765 | SSE streaming parser, chunk-by-chunk conversion, tool stream tracking |
+| `convert.c` | 543 | Bidirectional protocol conversion (Anthropic ↔ OpenAI), URL construction |
+| `worker.c` | 432 | libcurl multi worker thread pool, job queue, CURL easy handle lifecycle |
+| `stats.c` | 354 | Request statistics: per-model breakdown, time windows, latency tracking |
+| `config.c` | 404 | JSON config load/save, masked output, RWLock-protected hot-reload |
+| `log.c` | 422 | Logging: level filtering, file output, realtime terminal print |
+| `web/admin.html` | 850 | Single-file Web UI for config management (served at /admin) |
 
-### Key Design Decisions
+### Globals (declared in `main.c`, extern in `types.h`)
 
-- **Threading**: libevent on main thread (HTTP accept + event dispatch), N worker threads (configurable via `worker_threads`) running libcurl multi handles. Job queue with mutex+condvar for handoff.
-- **Global state**: `BASE`, `HTTP`, `WORKERS[]`, `RR` declared in `main.c` as extern in `types.h`. Config is RWLock-protected for hot-reload from Web UI.
-- **Streaming**: `stream_state_t` tracks conversion state across chunks. SSE lines parsed incrementally. Multiple concurrent tool streams tracked via `tool_stream_state_t[MAX_TOOL_STREAMS]`.
-- **Memory**: `membuf_t` for dynamic body accumulation. `gateway_job` holds full lifecycle of one upstream request. Jobs freed after response is sent.
-- **Config hot-reload**: Web UI can update config at runtime via `PUT /admin/config`. `config_replace_from_json()` replaces root under write lock.
+```c
+extern struct event_base *BASE;       // libevent event base
+extern struct evhttp *HTTP;           // libevent HTTP server
+extern worker_t WORKERS[MAX_WORKERS]; // worker thread pool
+extern int WORKER_COUNT;              // actual worker count
+extern unsigned long RR;              // round-robin job dispatch counter
+extern volatile sig_atomic_t STOP;    // shutdown flag
+```
+
+Config is held in `app_config_t *config_root;` (defined in `config.c`) and is RWLock-protected for concurrent reads from workers and exclusive writes from the admin Web UI hot-reload.
+
+### Key Internal Patterns
+
+- **`gateway_job` lifecycle**: Allocated per-request, holds the full lifecycle (Anthropic request body → upstream response → client response). Freed after response is fully sent.
+- **`membuf_t`**: Dynamic buffer (ptr + len + capacity) used for accumulating request/response bodies. Every heap-allocated buffer in the system uses this.
+- **`stream_state_t`**: Tracks SSE parsing state across chunks. For tool calls in streaming mode, `tool_stream_state_t[MAX_TOOL_STREAMS]` tracks partial delta accumulations.
+- **Threading model**: `handle_messages()` → `enqueue_job()` (wakes a worker via condvar). Workers run `libcurl multi` event loops. When a worker completes an upstream response, it calls `send_response_cb()` back in the main thread's event loop.
 
 ### Protocol Mapping
 
@@ -111,38 +144,68 @@ Claude Code → HTTP POST /v1/messages (Anthropic format)
 | `tools[].input_schema` | `tools[].function.parameters` |
 | `tool_choice` | `tool_choice` |
 | `content[type=tool_use]` | `tool_calls` |
+| `content[type=thinking]` | `reasoning_content` (extra field) |
 | `stop_reason=end_turn` | `finish_reason=stop` |
 | `stop_reason=max_tokens` | `finish_reason=length` |
 | `stop_reason=tool_use` | `finish_reason=tool_calls` |
 | `usage.input_tokens` | `usage.prompt_tokens` |
 | `usage.output_tokens` | `usage.completion_tokens` |
 
-### API Endpoints
+## Thread Safety Model
 
-| Method | Path | Handler | Auth |
-|--------|------|---------|------|
-| POST | /v1/messages | handle_messages | gateway_api_key |
-| POST | /v1/messages/count_tokens | handle_count_tokens | gateway_api_key |
-| GET | /v1/models | handle_models | gateway_api_key |
-| GET | /admin | Web UI (single-file HTML) | session (admin_password login) |
-| POST | /admin/api/login | login | admin_password |
-| POST | /admin/api/logout | logout | session |
-| GET | /admin/api/config | get config | session |
-| PUT/POST | /admin/api/config | update config | session |
-| POST | /admin/api/switch | switch default model | session |
-| POST | /admin/api/change-password | change admin password | session + old_password |
-| GET | /admin/api/stats | get request statistics | session |
-| POST | /admin/api/stats/reset | reset statistics | session |
-| GET | /healthz | handle_healthz | none |
-| GET | /readyz | handle_healthz | none |
+| Data | Protection | Details |
+|------|-----------|---------|
+| `config_root` | `pthread_rwlock_t` in `app_config_t` | Multiple concurrent readers; exclusive write during hot-reload. Workers read config per-request, Web UI admin writes config. |
+| Worker pending queues | Per-worker `pthread_mutex_t` + `pthread_cond_t` | `enqueue_job()` locks, inserts, signals. Worker thread locks, dequeues, processes. |
+| `job->send_buf` | Per-job `send_mu` | Worker thread writes streaming data, main thread's `deferred_send` reads. Both lock. |
+| Stats counters | `pthread_mutex_t` in `stats.c` | All stats mutations lock; reads lock. |
+| `RR`, `STOP` | No lock needed | `RR` is `unsigned long` (atomic on x86_64), `STOP` is `volatile sig_atomic_t`. |
+
+## Memory Management
+
+- **`membuf_t`**: Universal dynamic buffer (exponential growth, initial 8KB, double each time). Every heap buffer in the system uses this. Always `membuf_init` then `membuf_free`.
+- **`gateway_job` lifecycle**: Allocated in `handlers.c` → `enqueue_job() → worker → curl_write_cb/stream_finish → deferred_send()` frees job after response fully sent. Never freed manually.
+- **cJSON ownership**: Objects from `config_select_model_copy()` must be `cJSON_Delete()`'d by caller. Objects from `config_root` must NOT be freed (read-lock-protected shared tree).
+- **Helper**: `xstrdup()` is a NULL-safe strdup defined in convert.c, used throughout.
+- **Error strings**: Functions like `config_replace_from_json(body, &err)` allocate error strings that the caller must `free()`.
+
+## Config Hot-Reload Mechanics
+
+The `config_replace_from_json()` function in `config.c` handles API key preservation during hot-reload via the Web UI:
+1. Parse new config JSON
+2. For each model, if `api_key === "***MASKED***"` (the `MASKED_KEY` sentinel), copy the old config's real key for that model
+3. Write to temp file, atomically rename to config path
+4. Acquire write lock, swap `config_root`, release lock, free old tree
+5. Propagate side effects: `WORKER_COUNT`, `log_level`, `realtime_print`
+
+## Thinking Block Conversion (reasoning_content → thinking)
+
+OpenAI models like DeepSeek-R1 return `choices[0].delta.reasoning_content` in streaming chunks. The gateway converts these to Anthropic `thinking` content blocks:
+- **Streaming**: `reasoning_content` → `delta.type=thinking` with `thinking` field in SSE `content_block_delta` events. A `content_block_start` (type=thinking) is emitted before the first delta.
+- **Non-streaming**: `choices[0].message.reasoning_content` → `content[{type: thinking, thinking: ...}]` block inserted before the text block.
+- **`thinking_pending`** buffer accumulates partial thinking content with the same flush threshold as text deltas.
+
+## Security
+
+- **`config/gateway.local.json` is NOT in `.gitignore`** — never `git add` it, or add to `.gitignore` if it may be committed accidentally.
+- API keys in Web UI are masked as `***MASKED***`. The real key is preserved server-side during hot-reload.
+- Never expose `/admin` to the public internet. Use a reverse proxy with IP whitelisting for production.
+- Config file permissions: `chmod 600 config/gateway.local.json`.
 
 ## Common Tasks
 
 - **Add a new model route**: Add entry to `config/gateway.local.json` under `models[]`. No code change needed.
-- **Add a new endpoint**: Define handler in `handlers.c`, register in `handle_root()`.
-- **Modify protocol conversion**: Edit `convert.c` (request side) or `stream.c` (response/streaming side).
-- **Change config schema**: Update `config.h/c` accessors and `web/admin.html` form fields.
+- **Add a new HTTP endpoint**: Define handler in `handlers.c`, register in `handle_root()` (find the route table ~line 645).
+- **Modify protocol conversion**: Edit `convert.c` (request/build side) or `stream.c` (response/streaming side).
+- **Change config schema**: Update `config.h/c` accessors (`config_get_*` / `config_set_*`) and `web/admin.html` form fields.
+- **Add vendor-specific extra params**: Use `extra_body` in model config (e.g., `{"enable_search": true}`). No code change needed for simple key-value extras.
 - **Enable HTTP/2 multiplexing**: libcurl multi already handles connection reuse; confirm at build time that libcurl was built with HTTP/2 support.
+
+### Route Registration Pattern
+
+In `handlers.c`, `handle_root()` uses `evhttp_set_cb()` or manual URI dispatch. New endpoints follow the pattern:
+1. Create handler function with signature `void handler(struct evhttp_request *req, void *arg)`
+2. Register in `handle_root()` or use URI-path matching inside the catch-all handler
 
 ## Key Configuration
 
@@ -152,16 +215,51 @@ Claude Code → HTTP POST /v1/messages (Anthropic format)
   "listen_port": 8080,
   "worker_threads": 4,
   "gateway_api_key": "cc-local-token",
-  "admin_token": "admin-local-token",
+  "admin_password": "your-admin-password",
   "active_model": "qwen-coder",
+  "realtime_print": "false",
   "models": [{
     "id": "qwen-coder",
     "provider": "aliyun-bailian",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "api_key": "real-key",
-    "upstream_model": "qwen3-coder-plus"
+    "api_key": "sk-xxx",
+    "upstream_model": "qwen3-coder-plus",
+    "params": { "temperature": 0.2, "max_tokens": 4096 },
+    "extra_body": { "enable_search": true }
   }]
 }
 ```
 
-Use `config/gateway.local.json` at runtime (copy from `config/gateway.json`, never commit with real keys).
+Use `config/gateway.local.json` at runtime (copy from `config/gateway.json`, never commit with real keys). Config hot-reload via admin Web UI -> `PUT /admin/api/config` -> `config_replace_from_json()` swaps the config root under write lock.
+
+### Model Config Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | yes | Model name visible to Claude Code (`--model` flag) |
+| `provider` | yes | Vendor label (logging/stats only) |
+| `base_url` | yes* | OpenAI-compatible base URL (`/chat/completions` appended) |
+| `endpoint` | no | Full URL override; takes priority over `base_url` |
+| `api_key` | yes | Upstream API key |
+| `upstream_model` | yes | Real model name sent to upstream |
+| `params` | no | temperature/top_p/max_tokens/etc |
+| `extra_body` | no | Vendor-specific JSON merged into request body |
+
+### Real-time Print Modes
+
+| `realtime_print` | Effect |
+|---|---|
+| `"false"` | Off (default) |
+| `"all"` | Print full JSON of each request/response to terminal |
+| `"txt"` | Extract and print only conversation text content |
+
+## Test Payloads
+
+The `examples/` directory contains Anthropic-format test payloads:
+- `anthropic-message.json` — basic conversation
+- `anthropic-stream.json` — streaming request
+- `anthropic-tool.json` — tool/function calling request
+
+## Convenience Script
+
+`cc2open` is a wrapper script that sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_MODEL` env vars, then launches `claude` CLI pointed at the local gateway.
