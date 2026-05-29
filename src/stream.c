@@ -389,6 +389,18 @@ void stream_emit_error(gateway_job_t *job, const char *message) {
 void stream_finish(gateway_job_t *job) {
     stream_state_t *s = &job->stream_state;
     if (s->ended) return;
+    if (job->passthrough) {
+        /* 透传模式：上游已原样转发所有事件，不再额外发送结束事件 */
+        pthread_mutex_lock(&job->send_mu);
+        job->send_end = true;
+        pthread_mutex_unlock(&job->send_mu);
+        event_base_once(BASE, -1, EV_TIMEOUT, deferred_send, job, NULL);
+        job->response_sent = true;
+        s->ended = true;
+        rt_print("[RES] model=%s type=stream(passthrough) upstream_status=%ld prompt_tokens=%ld completion_tokens=%ld",
+            job->client_model, job->upstream_status, s->prompt_tokens, s->completion_tokens);
+        return;
+    }
     stream_start_reply(job);
     stream_message_start(job);
     /* 刷新剩余的 thinking/text 缓冲区，保持 reasoning_content 先于正文输出。 */
@@ -649,6 +661,37 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
     cJSON_Delete(root);
 }
 
+/* 从 Anthropic 流式响应中提取 usage 信息（仅用于透传模式统计）
+ *
+ * Anthropic SSE 中 usage 可能出现在：
+ * - message_start 事件：嵌套在 message.usage 中
+ * - message_delta 事件：直接出现在 usage 字段中
+ * - message_stop 事件：直接出现在 usage 字段中
+ */
+static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
+    cJSON *root = cJSON_Parse(json);
+    if (!root) return;
+    cJSON *usage = cJSON_GetObjectItemCaseSensitive(root, "usage");
+    if (cJSON_IsObject(usage)) {
+        long in_tok = json_get_long(usage, "input_tokens", -1);
+        long out_tok = json_get_long(usage, "output_tokens", -1);
+        if (in_tok >= 0) job->stream_state.prompt_tokens = in_tok;
+        if (out_tok >= 0) job->stream_state.completion_tokens = out_tok;
+    }
+    /* message_start 事件的 usage 嵌套在 message 对象内 */
+    cJSON *msg = cJSON_GetObjectItemCaseSensitive(root, "message");
+    if (cJSON_IsObject(msg)) {
+        cJSON *msg_usage = cJSON_GetObjectItemCaseSensitive(msg, "usage");
+        if (cJSON_IsObject(msg_usage)) {
+            long in_tok = json_get_long(msg_usage, "input_tokens", -1);
+            long out_tok = json_get_long(msg_usage, "output_tokens", -1);
+            if (in_tok >= 0) job->stream_state.prompt_tokens = in_tok;
+            if (out_tok >= 0) job->stream_state.completion_tokens = out_tok;
+        }
+    }
+    cJSON_Delete(root);
+}
+
 /* 处理单行 SSE 数据
  * 
  * SSE（Server-Sent Events）协议解析：
@@ -675,7 +718,11 @@ void process_sse_line(gateway_job_t *job, char *line) {
         stream_finish(job);
         return;
     }
-    handle_openai_stream_json(job, data);
+    if (job->passthrough) {
+        extract_anthropic_usage(job, data);
+    } else {
+        handle_openai_stream_json(job, data);
+    }
 }
 
 /* 追加数据到 SSE 解析缓冲区并处理
@@ -701,15 +748,15 @@ void process_sse_line(gateway_job_t *job, char *line) {
 void stream_parse_append(gateway_job_t *job, const char *ptr, size_t n) {
     stream_state_t *s = &job->stream_state;
     if (s->ended) return;
-    /* 透传模式：直接原样转发上游 SSE 数据，不做 OpenAI 格式解析 */
+    /* 透传模式：先原样转发上游 SSE 数据，同时继续累积到 linebuf 解析 usage */
     if (job->passthrough) {
         char *raw = (char *)malloc(n + 1);
-        if (!raw) return;
-        memcpy(raw, ptr, n);
-        raw[n] = 0;
-        stream_send_chunk(job, raw);
-        free(raw);
-        return;
+        if (raw) {
+            memcpy(raw, ptr, n);
+            raw[n] = 0;
+            stream_send_chunk(job, raw);
+            free(raw);
+        }
     }
     if (s->linebuf_len + n + 1 > s->linebuf_cap) {
         size_t nc = s->linebuf_cap ? s->linebuf_cap * 2 : 8192;
