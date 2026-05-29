@@ -1,1 +1,6 @@
 .worktrees/
+build/
+config/gateway.local.json
+gateway.log
+*.bak
+cc2open

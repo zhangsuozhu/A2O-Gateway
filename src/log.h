@@ -120,6 +120,13 @@ const char *rt_mode_name(void);
 void rt_print(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 /**
+ * @brief 从 JSON 对象中提取实时追踪文本。
+ *
+ * 主要供 rt_print_json(RT_TXT) 使用，也暴露给单元测试覆盖协议格式差异。
+ */
+void rt_extract_text_from_json(cJSON *j, membuf_t *out, const char *label);
+
+/**
  * @brief 实时打印 JSON 内容（支持纯文本提取）
  *
  * @param tag  标签前缀，如 "<--"（上游响应）或 "-->"（客户端请求）

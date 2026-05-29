@@ -472,8 +472,9 @@ const char *map_finish_reason(const char *fr) {
  */
 cJSON *openai_message_to_anthropic_content(cJSON *msg) {
     cJSON *content = cJSON_CreateArray();
-    /* DeepSeek reasoning_content -> Anthropic thinking block (must be first in content array) */
+    /* Upstream reasoning_content/reasoning -> Anthropic thinking block (must be first) */
     const char *rc = msg ? json_get_str(msg, "reasoning_content") : NULL;
+    if (!rc) rc = msg ? json_get_str(msg, "reasoning") : NULL;
     if (rc && *rc) {
         cJSON *think = cJSON_CreateObject();
         cJSON_AddStringToObject(think, "type", "thinking");

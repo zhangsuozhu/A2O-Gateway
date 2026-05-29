@@ -597,8 +597,9 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
     }
     cJSON *delta = cJSON_GetObjectItemCaseSensitive(ch, "delta");
     if (cJSON_IsObject(delta)) {
-        /* 累积并流式转发 DeepSeek reasoning_content */
+        /* 累积并流式转发上游 reasoning_content/reasoning */
         const char *rc = json_get_str(delta, "reasoning_content");
+        if (!rc) rc = json_get_str(delta, "reasoning");
         if (rc && *rc) {
             stream_state_t *s = &job->stream_state;
             size_t old_len = s->reasoning_content ? strlen(s->reasoning_content) : 0;

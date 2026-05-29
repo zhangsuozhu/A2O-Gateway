@@ -88,8 +88,34 @@ static int test_overlapping_request_fields_are_replaced(void) {
     return failed;
 }
 
+static int test_openai_reasoning_alias_converts_to_thinking_block(void) {
+    const char *oai_json =
+        "{"
+        "\"choices\":[{\"message\":{\"reasoning\":\"alias think\",\"content\":\"answer\"},\"finish_reason\":\"stop\"}],"
+        "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4}"
+        "}";
+    cJSON *out = convert_openai_response_to_anthropic(oai_json, "model");
+    char *printed = cJSON_PrintUnformatted(out);
+    int failed = 0;
+
+    if (!printed) {
+        fprintf(stderr, "failed to print converted response\n");
+        failed = 1;
+    } else {
+        if (!strstr(printed, "\"type\":\"thinking\"") || !strstr(printed, "\"thinking\":\"alias think\"")) {
+            fprintf(stderr, "expected reasoning alias to convert to thinking block, got: %s\n", printed);
+            failed = 1;
+        }
+    }
+
+    free(printed);
+    cJSON_Delete(out);
+    return failed;
+}
+
 int main(void) {
     int failed = 0;
     failed |= test_overlapping_request_fields_are_replaced();
+    failed |= test_openai_reasoning_alias_converts_to_thinking_block();
     return failed ? 1 : 0;
 }

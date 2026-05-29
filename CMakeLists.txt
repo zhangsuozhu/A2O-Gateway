@@ -39,5 +39,11 @@ target_link_directories(test_stream PRIVATE ${LIBEVENT_LIBRARY_DIRS} ${LIBCURL_L
 target_link_libraries(test_stream PRIVATE ${LIBEVENT_LIBRARIES} ${LIBCURL_LIBRARIES} ${CJSON_LIBRARIES} pthread)
 add_test(NAME stream_tests COMMAND test_stream)
 
+add_executable(test_log tests/test_log.c src/log.c)
+target_include_directories(test_log PRIVATE src ${CJSON_INCLUDE_DIRS})
+target_link_directories(test_log PRIVATE ${CJSON_LIBRARY_DIRS})
+target_link_libraries(test_log PRIVATE ${CJSON_LIBRARIES} pthread)
+add_test(NAME log_tests COMMAND test_log)
+
 install(TARGETS cc-oai-gateway DESTINATION bin)
 install(DIRECTORY web config DESTINATION share/cc-oai-gateway)

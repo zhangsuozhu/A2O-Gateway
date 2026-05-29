@@ -271,37 +271,57 @@ void rt_print(const char *fmt, ...) {
  * JSON 文本提取（用于 RT_TXT 模式）
  * ==================================================================== */
 
+static void append_labeled_text(membuf_t *out, const char *label, const char *role, const char *text) {
+    if (!out || !label || !role || !text || !*text) return;
+    membuf_append(out, label, strlen(label));
+    membuf_append(out, "[", 1);
+    membuf_append(out, role, strlen(role));
+    membuf_append(out, "]\n", 2);
+    membuf_append(out, text, strlen(text));
+    membuf_append(out, "\n", 1);
+}
+
+static void append_content_text(cJSON *content, membuf_t *out, const char *label, const char *role) {
+    const char *text = json_get_str(content, "content");
+    if (text) {
+        append_labeled_text(out, label, role, text);
+        return;
+    }
+
+    if (cJSON_IsString(content)) {
+        append_labeled_text(out, label, role, content->valuestring ? content->valuestring : "");
+        return;
+    }
+
+    if (!cJSON_IsArray(content)) return;
+
+    membuf_t buf;
+    membuf_init(&buf);
+    cJSON *blk;
+    cJSON_ArrayForEach(blk, content) {
+        const char *type = json_get_str(blk, "type");
+        const char *txt = NULL;
+        if (type && strcmp(type, "text") == 0) txt = json_get_str(blk, "text");
+        else if (type && strcmp(type, "input_text") == 0) txt = json_get_str(blk, "text");
+        if (!txt || !*txt) continue;
+        if (buf.len) membuf_append(&buf, "\n", 1);
+        membuf_append(&buf, txt, strlen(txt));
+    }
+    if (buf.len) append_labeled_text(out, label, role, buf.ptr);
+    membuf_free(&buf);
+}
+
 /**
- * @brief 从 JSON 对象中提取纯文本消息内容
- *
- * @param j     已解析的 cJSON 对象（请求或响应体）
- * @param out   输出缓冲区，提取的文本将追加到此 membuf
- * @param label 标签前缀（如 "-->" 或 "<--"），用于区分请求/响应方向
- *
- * 本函数支持提取以下格式的文本：
- * 1. Anthropic 请求格式中的 system 字段（顶级 system 字符串）。
- * 2. messages 数组中的消息内容（兼容 OpenAI 和 Anthropic 格式）：
- *    - OpenAI 风格：每个消息对象有 role 和 content（字符串）。
- *    - Anthropic 风格：content 为数组，遍历提取 type="text" 的文本块。
- * 3. Anthropic 响应格式中的 content 数组（顶级 content block 数组），
- *    将 type="text" 的块标记为 [assistant] 角色后追加。
- *
- * 对于 OpenAI 响应中的 choices 数组，本函数在 RT_TXT 模式下不做提取，
- * 因为响应内容会在 Anthropic↔OpenAI 转换过程中与流式事件混合，直接提取意义不大。
+ * @brief 从 JSON 对象中提取纯文本消息内容。
  */
-static void extract_text_from_json(cJSON *j, membuf_t *out, const char *label) {
+void rt_extract_text_from_json(cJSON *j, membuf_t *out, const char *label) {
     if (!j) return; /* 防御性编程：空 JSON 对象直接返回 */
 
     /* --------------------------------------------------------
      * 1. 提取 Anthropic 请求中的 system 字段
      * -------------------------------------------------------- */
-    const char *sys = json_get_str(j, "system");
-    if (sys) {
-        membuf_append(out, label, strlen(label));
-        membuf_append(out, "[system]\n", 9);
-        membuf_append(out, sys, strlen(sys));
-        membuf_append(out, "\n", 1);
-    }
+    cJSON *system = cJSON_GetObjectItemCaseSensitive(j, "system");
+    append_content_text(system, out, label, "system");
 
     /* --------------------------------------------------------
      * 2. 提取 messages 数组中的消息文本
@@ -314,46 +334,33 @@ static void extract_text_from_json(cJSON *j, membuf_t *out, const char *label) {
             const char *role = json_get_str(m, "role");
             if (!role) continue; /* 跳过没有 role 字段的异常消息 */
 
-            /* 输出标签和角色标识，如 "--> [user]\n" */
-            membuf_append(out, label, strlen(label));
-            membuf_append(out, "[", 1);
-            membuf_append(out, role, strlen(role));
-            membuf_append(out, "]\n", 2);
-
-            /* --- 2a. OpenAI 风格：content 为直接字符串 --- */
-            const char *content = json_get_str(m, "content");
-            if (content) {
-                membuf_append(out, content, strlen(content));
-                membuf_append(out, "\n", 1);
-            } else {
-                /* --- 2b. Anthropic 风格：content 为 block 数组 --- */
-                cJSON *blocks = cJSON_GetObjectItemCaseSensitive(m, "content");
-                if (cJSON_IsArray(blocks)) {
-                    cJSON *blk;
-                    cJSON_ArrayForEach(blk, blocks) {
-                        const char *type = json_get_str(blk, "type");
-                        /* 仅提取文本类型的块，忽略 image、tool_use 等 */
-                        if (type && strcmp(type, "text") == 0) {
-                            const char *txt = json_get_str(blk, "text");
-                            if (txt) {
-                                membuf_append(out, txt, strlen(txt));
-                                membuf_append(out, "\n", 1);
-                            }
-                        }
-                    }
-                }
-            }
+            cJSON *content = cJSON_GetObjectItemCaseSensitive(m, "content");
+            append_content_text(content, out, label, role);
+            const char *rc = json_get_str(m, "reasoning_content");
+            if (!rc) rc = json_get_str(m, "reasoning");
+            append_labeled_text(out, label, "thinking", rc);
         }
     }
 
     /* --------------------------------------------------------
-     * 3. OpenAI 响应中的 choices 数组（在 RT_TXT 模式下跳过）
+     * 3. OpenAI 响应中的 choices 数组
      * -------------------------------------------------------- */
     cJSON *choices = cJSON_GetObjectItemCaseSensitive(j, "choices");
-    if (cJSON_IsArray(choices) && rt_get_mode() == RT_TXT) {
-        /* 不提取 choices 中的 content，因为 OpenAI→Anthropic 转换时
-         * 响应内容会与转换逻辑混合，直接提取会造成内容重复或混乱。
-         * 若需要查看原始响应，可使用 RT_ALL 模式。 */
+    if (cJSON_IsArray(choices)) {
+        cJSON *choice;
+        cJSON_ArrayForEach(choice, choices) {
+            cJSON *msg = cJSON_GetObjectItemCaseSensitive(choice, "message");
+            if (!cJSON_IsObject(msg)) {
+                msg = cJSON_GetObjectItemCaseSensitive(choice, "delta");
+            }
+            if (!cJSON_IsObject(msg)) continue;
+
+            const char *rc = json_get_str(msg, "reasoning_content");
+            if (!rc) rc = json_get_str(msg, "reasoning");
+            append_labeled_text(out, label, "thinking", rc);
+            cJSON *content = cJSON_GetObjectItemCaseSensitive(msg, "content");
+            append_content_text(content, out, label, "assistant");
+        }
     }
 
     /* --------------------------------------------------------
@@ -366,20 +373,10 @@ static void extract_text_from_json(cJSON *j, membuf_t *out, const char *label) {
             const char *type = json_get_str(blk, "type");
             if (type && strcmp(type, "text") == 0) {
                 const char *txt = json_get_str(blk, "text");
-                if (txt) {
-                    membuf_append(out, label, strlen(label));
-                    membuf_append(out, "[assistant]\n", 12);
-                    membuf_append(out, txt, strlen(txt));
-                    membuf_append(out, "\n", 1);
-                }
+                append_labeled_text(out, label, "assistant", txt);
             } else if (type && strcmp(type, "thinking") == 0) {
                 const char *think = json_get_str(blk, "thinking");
-                if (think) {
-                    membuf_append(out, label, strlen(label));
-                    membuf_append(out, "[thinking]\n", 11);
-                    membuf_append(out, think, strlen(think));
-                    membuf_append(out, "\n", 1);
-                }
+                append_labeled_text(out, label, "thinking", think);
             }
         }
     }
@@ -397,7 +394,7 @@ static void extract_text_from_json(cJSON *j, membuf_t *out, const char *label) {
  * 3. 若模式为 RT_TXT：
  *    a. 尝试解析 body 为 JSON。
  *    b. 解析失败时（如上游返回纯文本错误），回退到原样输出 tag + body。
- *    c. 解析成功时，初始化 membuf，调用 extract_text_from_json 提取纯文本。
+ *    c. 解析成功时，初始化 membuf，调用 rt_extract_text_from_json 提取纯文本。
  *    d. 若提取到内容（buf.len > 0），调用 rt_print 输出。
  *    e. 清理 membuf 和 cJSON 对象，防止内存泄漏。
  */
@@ -417,7 +414,7 @@ void rt_print_json(const char *tag, const char *body) {
 
     membuf_t buf;
     membuf_init(&buf);
-    extract_text_from_json(j, &buf, tag);
+    rt_extract_text_from_json(j, &buf, tag);
 
     /* 仅当提取到有效内容时才输出，避免打印空行 */
     if (buf.len > 0) {

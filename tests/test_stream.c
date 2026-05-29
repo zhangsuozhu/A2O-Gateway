@@ -99,9 +99,28 @@ static int test_tool_calls_flush_pending_reasoning_content_first(void) {
     return failed;
 }
 
+static int test_stream_accepts_reasoning_alias(void) {
+    gateway_job_t job;
+    init_stream_job(&job);
+
+    handle_openai_stream_json(&job,
+        "{\"choices\":[{\"delta\":{\"reasoning\":\"alias think\"},\"finish_reason\":null}]}");
+    stream_finish(&job);
+
+    char *out = copy_send_buf(&job);
+    int failed = 0;
+    failed |= expect_contains(out, "\"type\":\"thinking_delta\"");
+    failed |= expect_contains(out, "\"thinking\":\"alias think\"");
+
+    free(out);
+    cleanup_stream_job(&job);
+    return failed;
+}
+
 int main(void) {
     int failed = 0;
     failed |= test_stream_finish_flushes_pending_reasoning_content();
     failed |= test_tool_calls_flush_pending_reasoning_content_first();
+    failed |= test_stream_accepts_reasoning_alias();
     return failed ? 1 : 0;
 }
