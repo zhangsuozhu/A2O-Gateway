@@ -415,7 +415,11 @@ static void handle_messages(struct evhttp_request *req) {
     char *upstream_body = NULL;
     char *url = NULL;
     if (passthrough) {
-        /* 透传模式：直接使用 Anthropic 请求体，不做任何处理 */
+        /* 透传模式：替换 model 为 upstream_model 后直接转发 */
+        const char *um = json_get_str(model, "upstream_model");
+        if (um && *um) {
+            cJSON_ReplaceItemInObjectCaseSensitive(anth, "model", cJSON_CreateString(um));
+        }
         upstream_body = cJSON_PrintUnformatted(anth);
         url = make_upstream_url_for_messages(model);
         free(body); body = NULL;
