@@ -317,6 +317,22 @@ cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, in
         wc++;
     }
 
+    /* 先 COUNT 总数 */
+    char count_sql[1024];
+    snprintf(count_sql, sizeof(count_sql), "SELECT COUNT(*) FROM requests%s;", where);
+    sqlite3_stmt *count_stmt = NULL;
+    int total = 0;
+    if (sqlite3_prepare_v2(g_db, count_sql, -1, &count_stmt, NULL) == SQLITE_OK) {
+        int cidx = 1;
+        if (model && *model) sqlite3_bind_text(count_stmt, cidx++, model, -1, SQLITE_STATIC);
+        if (from > 0) sqlite3_bind_int64(count_stmt, cidx++, (sqlite3_int64)from);
+        if (to > 0) sqlite3_bind_int64(count_stmt, cidx++, (sqlite3_int64)to);
+        if (sqlite3_step(count_stmt) == SQLITE_ROW) {
+            total = sqlite3_column_int(count_stmt, 0);
+        }
+        sqlite3_finalize(count_stmt);
+    }
+
     char sql[1024];
     snprintf(sql, sizeof(sql),
              "SELECT timestamp, model, provider, stream, http_status, curl_code,"
@@ -328,7 +344,12 @@ cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, in
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         log_msg("ERROR", "db_query_history prepare: %s", sqlite3_errmsg(g_db));
-        return cJSON_CreateArray();
+        cJSON *out = cJSON_CreateObject();
+        cJSON_AddNumberToObject(out, "total", 0);
+        cJSON_AddNumberToObject(out, "limit", limit > 0 ? limit : 100);
+        cJSON_AddNumberToObject(out, "offset", offset > 0 ? offset : 0);
+        cJSON_AddItemToObject(out, "data", cJSON_CreateArray());
+        return out;
     }
 
     int idx = 1;
@@ -359,7 +380,13 @@ cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, in
         cJSON_AddItemToArray(arr, obj);
     }
     sqlite3_finalize(stmt);
-    return arr;
+
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddNumberToObject(out, "total", total);
+    cJSON_AddNumberToObject(out, "limit", limit > 0 ? limit : 100);
+    cJSON_AddNumberToObject(out, "offset", offset > 0 ? offset : 0);
+    cJSON_AddItemToObject(out, "data", arr);
+    return out;
 }
 
 cJSON *db_query_hourly(const char *model, const char *from_hour, const char *to_hour) {
