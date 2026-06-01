@@ -4,11 +4,307 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
 
 static sqlite3 *g_db = NULL;
 static char *g_db_path = NULL;
 
-/* 建表 SQL */
+/* ====================================================================
+ * 异步批量写入队列
+ * ==================================================================== */
+
+typedef enum {
+    BATCH_INSERT_REQUEST,
+    BATCH_UPDATE_HOURLY,
+    BATCH_UPDATE_DAILY,
+    BATCH_UPDATE_MODEL
+} batch_op_t;
+
+typedef struct batch_item {
+    batch_op_t op;
+    time_t timestamp;
+    char model[64];
+    char provider[64];
+    bool stream;
+    int http_status;
+    int curl_code;
+    long input_tokens;
+    long output_tokens;
+    long cache_read_input_tokens;
+    long cache_creation_input_tokens;
+    double latency_ms;
+    size_t request_bytes;
+    size_t response_bytes;
+    char client_model[64];
+    char upstream_url[256];
+    char time_key[32];
+    bool success;
+    struct batch_item *next;
+} batch_item_t;
+
+static batch_item_t *batch_head = NULL;
+static batch_item_t *batch_tail = NULL;
+static int batch_count = 0;
+static pthread_mutex_t batch_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t batch_cv = PTHREAD_COND_INITIALIZER;
+static pthread_t batch_thread;
+static volatile bool batch_running = false;
+
+#define BATCH_FLUSH_SIZE 500
+#define BATCH_FLUSH_MS 100
+
+static void batch_enqueue(batch_item_t *item)
+{
+    pthread_mutex_lock(&batch_mu);
+    item->next = NULL;
+    if (batch_tail) {
+        batch_tail->next = item;
+    } else {
+        batch_head = item;
+    }
+    batch_tail = item;
+    batch_count++;
+    bool should_signal = (batch_count >= BATCH_FLUSH_SIZE);
+    pthread_mutex_unlock(&batch_mu);
+    if (should_signal)
+        pthread_cond_signal(&batch_cv);
+}
+
+static batch_item_t *batch_dequeue_all(int *out_count)
+{
+    pthread_mutex_lock(&batch_mu);
+    batch_item_t *items = batch_head;
+    *out_count = batch_count;
+    batch_head = batch_tail = NULL;
+    batch_count = 0;
+    pthread_mutex_unlock(&batch_mu);
+    return items;
+}
+
+static void db_flush_batch(batch_item_t *items, int count);
+
+static void *batch_worker(void *arg)
+{
+    (void)arg;
+    while (batch_running) {
+        pthread_mutex_lock(&batch_mu);
+        while (batch_count < BATCH_FLUSH_SIZE && batch_running) {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_nsec += BATCH_FLUSH_MS * 1000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec += 1;
+                ts.tv_nsec -= 1000000000;
+            }
+            int rc = pthread_cond_timedwait(&batch_cv, &batch_mu, &ts);
+            if (rc == ETIMEDOUT)
+                break;
+        }
+        batch_item_t *items = batch_head;
+        int count = batch_count;
+        batch_head = batch_tail = NULL;
+        batch_count = 0;
+        pthread_mutex_unlock(&batch_mu);
+
+        if (items)
+            db_flush_batch(items, count);
+
+        while (items) {
+            batch_item_t *next = items->next;
+            free(items);
+            items = next;
+        }
+    }
+    return NULL;
+}
+
+static void db_flush_batch(batch_item_t *items, int count)
+{
+    if (!g_db || !items || count <= 0)
+        return;
+
+    sqlite3_exec(g_db, "BEGIN IMMEDIATE;", NULL, NULL, NULL);
+
+    const char *req_sql =
+        "INSERT INTO requests"
+        " (timestamp, model, provider, stream, http_status, curl_code,"
+        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+        " latency_ms, request_bytes, response_bytes, client_model, upstream_url)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+
+    const char *hour_sql =
+        "INSERT INTO hourly_stats (hour, model, provider, requests, success, failed,"
+        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+        " total_latency_ms, latency_count)"
+        " VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)"
+        " ON CONFLICT(hour, model, provider) DO UPDATE SET"
+        " requests = requests + 1,"
+        " success = success + excluded.success,"
+        " failed = failed + excluded.failed,"
+        " input_tokens = input_tokens + excluded.input_tokens,"
+        " output_tokens = output_tokens + excluded.output_tokens,"
+        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
+        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
+        " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
+        " latency_count = latency_count + excluded.latency_count;";
+
+    const char *day_sql =
+        "INSERT INTO daily_stats (day, model, provider, requests, success, failed,"
+        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+        " total_latency_ms, latency_count)"
+        " VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)"
+        " ON CONFLICT(day, model, provider) DO UPDATE SET"
+        " requests = requests + 1,"
+        " success = success + excluded.success,"
+        " failed = failed + excluded.failed,"
+        " input_tokens = input_tokens + excluded.input_tokens,"
+        " output_tokens = output_tokens + excluded.output_tokens,"
+        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
+        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
+        " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
+        " latency_count = latency_count + excluded.latency_count;";
+
+    const char *model_sql =
+        "INSERT INTO model_stats (model, provider, total_requests, total_success, total_failed,"
+        " total_input_tokens, total_output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+        " total_latency_ms, latency_count,"
+        " min_latency_ms, max_latency_ms, first_seen, last_seen)"
+        " VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)"
+        " ON CONFLICT(model) DO UPDATE SET"
+        " provider = excluded.provider,"
+        " total_requests = total_requests + 1,"
+        " total_success = total_success + excluded.total_success,"
+        " total_failed = total_failed + excluded.total_failed,"
+        " total_input_tokens = total_input_tokens + excluded.total_input_tokens,"
+        " total_output_tokens = total_output_tokens + excluded.total_output_tokens,"
+        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
+        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
+        " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
+        " latency_count = latency_count + excluded.latency_count,"
+        " min_latency_ms = CASE WHEN excluded.min_latency_ms IS NOT NULL AND"
+        "  (model_stats.min_latency_ms IS NULL OR excluded.min_latency_ms < model_stats.min_latency_ms)"
+        "  THEN excluded.min_latency_ms ELSE model_stats.min_latency_ms END,"
+        " max_latency_ms = CASE WHEN excluded.max_latency_ms IS NOT NULL AND"
+        "  (model_stats.max_latency_ms IS NULL OR excluded.max_latency_ms > model_stats.max_latency_ms)"
+        "  THEN excluded.max_latency_ms ELSE model_stats.max_latency_ms END,"
+        " last_seen = excluded.last_seen;";
+
+    sqlite3_stmt *req_stmt = NULL;
+    sqlite3_stmt *hour_stmt = NULL;
+    sqlite3_stmt *day_stmt = NULL;
+    sqlite3_stmt *model_stmt = NULL;
+
+    sqlite3_prepare_v2(g_db, req_sql, -1, &req_stmt, NULL);
+    sqlite3_prepare_v2(g_db, hour_sql, -1, &hour_stmt, NULL);
+    sqlite3_prepare_v2(g_db, day_sql, -1, &day_stmt, NULL);
+    sqlite3_prepare_v2(g_db, model_sql, -1, &model_stmt, NULL);
+
+    for (batch_item_t *it = items; it; it = it->next) {
+        sqlite3_stmt *stmt = NULL;
+        switch (it->op) {
+        case BATCH_INSERT_REQUEST:
+            stmt = req_stmt;
+            sqlite3_bind_int64(stmt, 1, (sqlite3_int64)it->timestamp);
+            sqlite3_bind_text(stmt, 2, it->model, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 3, it->provider, -1, SQLITE_STATIC);
+            sqlite3_bind_int(stmt, 4, it->stream ? 1 : 0);
+            sqlite3_bind_int(stmt, 5, it->http_status);
+            sqlite3_bind_int(stmt, 6, it->curl_code);
+            sqlite3_bind_int64(stmt, 7, (sqlite3_int64)it->input_tokens);
+            sqlite3_bind_int64(stmt, 8, (sqlite3_int64)it->output_tokens);
+            sqlite3_bind_int64(stmt, 9, (sqlite3_int64)it->cache_read_input_tokens);
+            sqlite3_bind_int64(stmt, 10, (sqlite3_int64)it->cache_creation_input_tokens);
+            sqlite3_bind_double(stmt, 11, it->latency_ms);
+            sqlite3_bind_int64(stmt, 12, (sqlite3_int64)it->request_bytes);
+            sqlite3_bind_int64(stmt, 13, (sqlite3_int64)it->response_bytes);
+            sqlite3_bind_text(stmt, 14, it->client_model, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 15, it->upstream_url, -1, SQLITE_STATIC);
+            break;
+        case BATCH_UPDATE_HOURLY:
+            stmt = hour_stmt;
+            sqlite3_bind_text(stmt, 1, it->time_key, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 2, it->model, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 3, it->provider, -1, SQLITE_STATIC);
+            sqlite3_bind_int(stmt, 4, it->success ? 1 : 0);
+            sqlite3_bind_int(stmt, 5, it->success ? 0 : 1);
+            sqlite3_bind_int64(stmt, 6, (sqlite3_int64)it->input_tokens);
+            sqlite3_bind_int64(stmt, 7, (sqlite3_int64)it->output_tokens);
+            sqlite3_bind_int64(stmt, 8, (sqlite3_int64)it->cache_read_input_tokens);
+            sqlite3_bind_int64(stmt, 9, (sqlite3_int64)it->cache_creation_input_tokens);
+            sqlite3_bind_double(stmt, 10, it->latency_ms > 0 ? it->latency_ms : 0);
+            break;
+        case BATCH_UPDATE_DAILY:
+            stmt = day_stmt;
+            sqlite3_bind_text(stmt, 1, it->time_key, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 2, it->model, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 3, it->provider, -1, SQLITE_STATIC);
+            sqlite3_bind_int(stmt, 4, it->success ? 1 : 0);
+            sqlite3_bind_int(stmt, 5, it->success ? 0 : 1);
+            sqlite3_bind_int64(stmt, 6, (sqlite3_int64)it->input_tokens);
+            sqlite3_bind_int64(stmt, 7, (sqlite3_int64)it->output_tokens);
+            sqlite3_bind_int64(stmt, 8, (sqlite3_int64)it->cache_read_input_tokens);
+            sqlite3_bind_int64(stmt, 9, (sqlite3_int64)it->cache_creation_input_tokens);
+            sqlite3_bind_double(stmt, 10, it->latency_ms > 0 ? it->latency_ms : 0);
+            break;
+        case BATCH_UPDATE_MODEL:
+            stmt = model_stmt;
+            time_t now = it->timestamp ? it->timestamp : time(NULL);
+            sqlite3_bind_text(stmt, 1, it->model, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 2, it->provider, -1, SQLITE_STATIC);
+            sqlite3_bind_int(stmt, 3, it->success ? 1 : 0);
+            sqlite3_bind_int(stmt, 4, it->success ? 0 : 1);
+            sqlite3_bind_int64(stmt, 5, (sqlite3_int64)it->input_tokens);
+            sqlite3_bind_int64(stmt, 6, (sqlite3_int64)it->output_tokens);
+            sqlite3_bind_int64(stmt, 7, (sqlite3_int64)it->cache_read_input_tokens);
+            sqlite3_bind_int64(stmt, 8, (sqlite3_int64)it->cache_creation_input_tokens);
+            sqlite3_bind_double(stmt, 9, it->latency_ms > 0 ? it->latency_ms : 0);
+            sqlite3_bind_double(stmt, 10, it->latency_ms > 0 ? it->latency_ms : -1);
+            sqlite3_bind_double(stmt, 11, it->latency_ms > 0 ? it->latency_ms : -1);
+            sqlite3_bind_int64(stmt, 12, (sqlite3_int64)now);
+            sqlite3_bind_int64(stmt, 13, (sqlite3_int64)now);
+            break;
+        }
+
+        if (stmt) {
+            int rc = sqlite3_step(stmt);
+            if (rc != SQLITE_DONE) {
+                log_msg("ERROR", "batch step op=%d: %s", it->op, sqlite3_errmsg(g_db));
+            }
+            sqlite3_reset(stmt);
+            sqlite3_clear_bindings(stmt);
+        }
+    }
+
+    if (req_stmt) sqlite3_finalize(req_stmt);
+    if (hour_stmt) sqlite3_finalize(hour_stmt);
+    if (day_stmt) sqlite3_finalize(day_stmt);
+    if (model_stmt) sqlite3_finalize(model_stmt);
+
+    sqlite3_exec(g_db, "COMMIT;", NULL, NULL, NULL);
+}
+
+/* 在关闭/重置前强制 flush 所有待处理数据 */
+static void batch_flush_sync(void)
+{
+    batch_item_t *items;
+    int count;
+    do {
+        items = batch_dequeue_all(&count);
+        if (items) {
+            db_flush_batch(items, count);
+            while (items) {
+                batch_item_t *next = items->next;
+                free(items);
+                items = next;
+            }
+        }
+    } while (items);
+}
+
+/* ====================================================================
+ * 建表 SQL
+ * ==================================================================== */
+
 static const char *CREATE_TABLES_SQL =
     "CREATE TABLE IF NOT EXISTS requests ("
     "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -83,7 +379,8 @@ static const char *CREATE_TABLES_SQL =
     ");"
     ;
 
-bool db_init(const char *db_path) {
+bool db_init(const char *db_path)
+{
     if (g_db) return true;
 
     int rc = sqlite3_open(db_path, &g_db);
@@ -109,7 +406,7 @@ bool db_init(const char *db_path) {
         return false;
     }
 
-    /* schema 升级：为已存在的表添加缓存列（失败则忽略，说明列已存在） */
+    /* schema 升级 */
     sqlite3_exec(g_db, "ALTER TABLE requests ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
     sqlite3_exec(g_db, "ALTER TABLE requests ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
     sqlite3_exec(g_db, "ALTER TABLE hourly_stats ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
@@ -121,13 +418,25 @@ bool db_init(const char *db_path) {
 
     free(g_db_path);
     g_db_path = db_path ? strdup(db_path) : strdup("gateway.db");
-    log_msg("INFO", "db_init ok: %s", g_db_path);
+
+    /* 启动后台批量写入线程 */
+    batch_running = true;
+    pthread_create(&batch_thread, NULL, batch_worker, NULL);
+
+    log_msg("INFO", "db_init ok: %s (async batch flush=%dms/%d)", g_db_path, BATCH_FLUSH_MS, BATCH_FLUSH_SIZE);
     return true;
 }
 
-bool db_reset(void) {
+bool db_reset(void)
+{
     if (!g_db_path) return false;
+
+    batch_flush_sync();
+
     if (g_db) {
+        batch_running = false;
+        pthread_cond_signal(&batch_cv);
+        pthread_join(batch_thread, NULL);
         sqlite3_close(g_db);
         g_db = NULL;
     }
@@ -136,8 +445,13 @@ bool db_reset(void) {
     return db_init(g_db_path);
 }
 
-void db_close(void) {
+void db_close(void)
+{
     if (g_db) {
+        batch_flush_sync();
+        batch_running = false;
+        pthread_cond_signal(&batch_cv);
+        pthread_join(batch_thread, NULL);
         sqlite3_close(g_db);
         g_db = NULL;
         log_msg("INFO", "db_close");
@@ -149,209 +463,111 @@ bool db_insert_request(const char *model, const char *provider, bool stream,
                        long input_tokens, long output_tokens,
                        long cache_read_input_tokens, long cache_creation_input_tokens,
                        double latency_ms, size_t request_bytes, size_t response_bytes,
-                       const char *client_model, const char *upstream_url) {
+                       const char *client_model, const char *upstream_url)
+{
     if (!g_db) return false;
 
-    const char *sql = "INSERT INTO requests"
-        " (timestamp, model, provider, stream, http_status, curl_code,"
-        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
-        " latency_ms, request_bytes, response_bytes,"
-        " client_model, upstream_url)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+    batch_item_t *item = calloc(1, sizeof(batch_item_t));
+    if (!item) return false;
 
-    sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        log_msg("ERROR", "db_insert_request prepare: %s", sqlite3_errmsg(g_db));
-        return false;
-    }
+    item->op = BATCH_INSERT_REQUEST;
+    item->timestamp = time(NULL);
+    strncpy(item->model, model ? model : "", sizeof(item->model) - 1);
+    strncpy(item->provider, provider ? provider : "", sizeof(item->provider) - 1);
+    item->stream = stream;
+    item->http_status = http_status;
+    item->curl_code = curl_code;
+    item->input_tokens = input_tokens;
+    item->output_tokens = output_tokens;
+    item->cache_read_input_tokens = cache_read_input_tokens;
+    item->cache_creation_input_tokens = cache_creation_input_tokens;
+    item->latency_ms = latency_ms;
+    item->request_bytes = request_bytes;
+    item->response_bytes = response_bytes;
+    strncpy(item->client_model, client_model ? client_model : "", sizeof(item->client_model) - 1);
+    strncpy(item->upstream_url, upstream_url ? upstream_url : "", sizeof(item->upstream_url) - 1);
 
-    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)time(NULL));
-    sqlite3_bind_text(stmt, 2, model ? model : "", -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, provider ? provider : "", -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 4, stream ? 1 : 0);
-    sqlite3_bind_int(stmt, 5, http_status);
-    sqlite3_bind_int(stmt, 6, curl_code);
-    sqlite3_bind_int64(stmt, 7, (sqlite3_int64)input_tokens);
-    sqlite3_bind_int64(stmt, 8, (sqlite3_int64)output_tokens);
-    sqlite3_bind_int64(stmt, 9, (sqlite3_int64)cache_read_input_tokens);
-    sqlite3_bind_int64(stmt, 10, (sqlite3_int64)cache_creation_input_tokens);
-    sqlite3_bind_double(stmt, 11, latency_ms);
-    sqlite3_bind_int64(stmt, 12, (sqlite3_int64)request_bytes);
-    sqlite3_bind_int64(stmt, 13, (sqlite3_int64)response_bytes);
-    sqlite3_bind_text(stmt, 14, client_model ? client_model : "", -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 15, upstream_url ? upstream_url : "", -1, SQLITE_STATIC);
-
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
-        log_msg("ERROR", "db_insert_request step: %s", sqlite3_errmsg(g_db));
-        return false;
-    }
+    batch_enqueue(item);
     return true;
 }
 
 bool db_update_hourly_stats(const char *hour, const char *model, const char *provider,
                             bool success, long input_tokens, long output_tokens,
                             long cache_read_input_tokens, long cache_creation_input_tokens,
-                            double latency_ms) {
+                            double latency_ms)
+{
     if (!g_db) return false;
 
-    const char *sql =
-        "INSERT INTO hourly_stats (hour, model, provider, requests, success, failed,"
-        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
-        " total_latency_ms, latency_count)"
-        " VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)"
-        " ON CONFLICT(hour, model, provider) DO UPDATE SET"
-        " requests = requests + 1,"
-        " success = success + excluded.success,"
-        " failed = failed + excluded.failed,"
-        " input_tokens = input_tokens + excluded.input_tokens,"
-        " output_tokens = output_tokens + excluded.output_tokens,"
-        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
-        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
-        " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
-        " latency_count = latency_count + excluded.latency_count;";
+    batch_item_t *item = calloc(1, sizeof(batch_item_t));
+    if (!item) return false;
 
-    sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        log_msg("ERROR", "db_update_hourly prepare: %s", sqlite3_errmsg(g_db));
-        return false;
-    }
+    item->op = BATCH_UPDATE_HOURLY;
+    strncpy(item->time_key, hour ? hour : "", sizeof(item->time_key) - 1);
+    strncpy(item->model, model ? model : "", sizeof(item->model) - 1);
+    strncpy(item->provider, provider ? provider : "", sizeof(item->provider) - 1);
+    item->success = success;
+    item->input_tokens = input_tokens;
+    item->output_tokens = output_tokens;
+    item->cache_read_input_tokens = cache_read_input_tokens;
+    item->cache_creation_input_tokens = cache_creation_input_tokens;
+    item->latency_ms = latency_ms;
 
-    sqlite3_bind_text(stmt, 1, hour ? hour : "", -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, model ? model : "", -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, provider ? provider : "", -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 4, success ? 1 : 0);
-    sqlite3_bind_int(stmt, 5, success ? 0 : 1);
-    sqlite3_bind_int64(stmt, 6, (sqlite3_int64)input_tokens);
-    sqlite3_bind_int64(stmt, 7, (sqlite3_int64)output_tokens);
-    sqlite3_bind_int64(stmt, 8, (sqlite3_int64)cache_read_input_tokens);
-    sqlite3_bind_int64(stmt, 9, (sqlite3_int64)cache_creation_input_tokens);
-    sqlite3_bind_double(stmt, 10, latency_ms > 0 ? latency_ms : 0);
-
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
-        log_msg("ERROR", "db_update_hourly step: %s", sqlite3_errmsg(g_db));
-        return false;
-    }
+    batch_enqueue(item);
     return true;
 }
 
 bool db_update_daily_stats(const char *day, const char *model, const char *provider,
                            bool success, long input_tokens, long output_tokens,
                            long cache_read_input_tokens, long cache_creation_input_tokens,
-                           double latency_ms) {
+                           double latency_ms)
+{
     if (!g_db) return false;
 
-    const char *sql =
-        "INSERT INTO daily_stats (day, model, provider, requests, success, failed,"
-        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
-        " total_latency_ms, latency_count)"
-        " VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)"
-        " ON CONFLICT(day, model, provider) DO UPDATE SET"
-        " requests = requests + 1,"
-        " success = success + excluded.success,"
-        " failed = failed + excluded.failed,"
-        " input_tokens = input_tokens + excluded.input_tokens,"
-        " output_tokens = output_tokens + excluded.output_tokens,"
-        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
-        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
-        " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
-        " latency_count = latency_count + excluded.latency_count;";
+    batch_item_t *item = calloc(1, sizeof(batch_item_t));
+    if (!item) return false;
 
-    sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        log_msg("ERROR", "db_update_daily prepare: %s", sqlite3_errmsg(g_db));
-        return false;
-    }
+    item->op = BATCH_UPDATE_DAILY;
+    strncpy(item->time_key, day ? day : "", sizeof(item->time_key) - 1);
+    strncpy(item->model, model ? model : "", sizeof(item->model) - 1);
+    strncpy(item->provider, provider ? provider : "", sizeof(item->provider) - 1);
+    item->success = success;
+    item->input_tokens = input_tokens;
+    item->output_tokens = output_tokens;
+    item->cache_read_input_tokens = cache_read_input_tokens;
+    item->cache_creation_input_tokens = cache_creation_input_tokens;
+    item->latency_ms = latency_ms;
 
-    sqlite3_bind_text(stmt, 1, day ? day : "", -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, model ? model : "", -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, provider ? provider : "", -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 4, success ? 1 : 0);
-    sqlite3_bind_int(stmt, 5, success ? 0 : 1);
-    sqlite3_bind_int64(stmt, 6, (sqlite3_int64)input_tokens);
-    sqlite3_bind_int64(stmt, 7, (sqlite3_int64)output_tokens);
-    sqlite3_bind_int64(stmt, 8, (sqlite3_int64)cache_read_input_tokens);
-    sqlite3_bind_int64(stmt, 9, (sqlite3_int64)cache_creation_input_tokens);
-    sqlite3_bind_double(stmt, 10, latency_ms > 0 ? latency_ms : 0);
-
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
-        log_msg("ERROR", "db_update_daily step: %s", sqlite3_errmsg(g_db));
-        return false;
-    }
+    batch_enqueue(item);
     return true;
 }
 
 bool db_update_model_stats(const char *model, const char *provider,
                            bool success, long input_tokens, long output_tokens,
                            long cache_read_input_tokens, long cache_creation_input_tokens,
-                           double latency_ms) {
+                           double latency_ms)
+{
     if (!g_db) return false;
 
-    const char *sql =
-        "INSERT INTO model_stats (model, provider, total_requests, total_success, total_failed,"
-        " total_input_tokens, total_output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
-        " total_latency_ms, latency_count,"
-        " min_latency_ms, max_latency_ms, first_seen, last_seen)"
-        " VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)"
-        " ON CONFLICT(model) DO UPDATE SET"
-        " provider = excluded.provider,"
-        " total_requests = total_requests + 1,"
-        " total_success = total_success + excluded.total_success,"
-        " total_failed = total_failed + excluded.total_failed,"
-        " total_input_tokens = total_input_tokens + excluded.total_input_tokens,"
-        " total_output_tokens = total_output_tokens + excluded.total_output_tokens,"
-        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
-        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
-        " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
-        " latency_count = latency_count + excluded.latency_count,"
-        " min_latency_ms = CASE WHEN excluded.min_latency_ms IS NOT NULL AND"
-        "  (model_stats.min_latency_ms IS NULL OR excluded.min_latency_ms < model_stats.min_latency_ms)"
-        "  THEN excluded.min_latency_ms ELSE model_stats.min_latency_ms END,"
-        " max_latency_ms = CASE WHEN excluded.max_latency_ms IS NOT NULL AND"
-        "  (model_stats.max_latency_ms IS NULL OR excluded.max_latency_ms > model_stats.max_latency_ms)"
-        "  THEN excluded.max_latency_ms ELSE model_stats.max_latency_ms END,"
-        " last_seen = excluded.last_seen;";
+    batch_item_t *item = calloc(1, sizeof(batch_item_t));
+    if (!item) return false;
 
-    sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        log_msg("ERROR", "db_update_model prepare: %s", sqlite3_errmsg(g_db));
-        return false;
-    }
+    item->op = BATCH_UPDATE_MODEL;
+    item->timestamp = time(NULL);
+    strncpy(item->model, model ? model : "", sizeof(item->model) - 1);
+    strncpy(item->provider, provider ? provider : "", sizeof(item->provider) - 1);
+    item->success = success;
+    item->input_tokens = input_tokens;
+    item->output_tokens = output_tokens;
+    item->cache_read_input_tokens = cache_read_input_tokens;
+    item->cache_creation_input_tokens = cache_creation_input_tokens;
+    item->latency_ms = latency_ms;
 
-    time_t now = time(NULL);
-    sqlite3_bind_text(stmt, 1, model ? model : "", -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, provider ? provider : "", -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 3, success ? 1 : 0);
-    sqlite3_bind_int(stmt, 4, success ? 0 : 1);
-    sqlite3_bind_int64(stmt, 5, (sqlite3_int64)input_tokens);
-    sqlite3_bind_int64(stmt, 6, (sqlite3_int64)output_tokens);
-    sqlite3_bind_int64(stmt, 7, (sqlite3_int64)cache_read_input_tokens);
-    sqlite3_bind_int64(stmt, 8, (sqlite3_int64)cache_creation_input_tokens);
-    sqlite3_bind_double(stmt, 9, latency_ms > 0 ? latency_ms : 0);
-    sqlite3_bind_double(stmt, 10, latency_ms > 0 ? latency_ms : -1);
-    sqlite3_bind_double(stmt, 11, latency_ms > 0 ? latency_ms : -1);
-    sqlite3_bind_int64(stmt, 12, (sqlite3_int64)now);
-    sqlite3_bind_int64(stmt, 13, (sqlite3_int64)now);
-
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
-        log_msg("ERROR", "db_update_model step: %s", sqlite3_errmsg(g_db));
-        return false;
-    }
+    batch_enqueue(item);
     return true;
 }
 
-cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, int offset) {
+cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, int offset)
+{
     if (!g_db) return cJSON_CreateArray();
 
     /* 动态构建 WHERE 子句 */
@@ -447,7 +663,8 @@ cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, in
     return out;
 }
 
-cJSON *db_query_hourly(const char *model, const char *from_hour, const char *to_hour) {
+cJSON *db_query_hourly(const char *model, const char *from_hour, const char *to_hour)
+{
     if (!g_db) return cJSON_CreateArray();
 
     char where[512] = "";
@@ -507,7 +724,8 @@ cJSON *db_query_hourly(const char *model, const char *from_hour, const char *to_
     return arr;
 }
 
-cJSON *db_query_daily(const char *model, const char *from_day, const char *to_day) {
+cJSON *db_query_daily(const char *model, const char *from_day, const char *to_day)
+{
     if (!g_db) return cJSON_CreateArray();
 
     char where[512] = "";
@@ -567,8 +785,11 @@ cJSON *db_query_daily(const char *model, const char *from_day, const char *to_da
     return arr;
 }
 
-bool db_cleanup_old_data(int request_retention_days, int hourly_retention_days) {
+bool db_cleanup_old_data(int request_retention_days, int hourly_retention_days)
+{
     if (!g_db) return false;
+
+    batch_flush_sync();
 
     time_t now = time(NULL);
     char *err = NULL;

@@ -54,5 +54,10 @@ target_link_directories(test_cache_control PRIVATE ${CJSON_LIBRARY_DIRS})
 target_link_libraries(test_cache_control PRIVATE ${CJSON_LIBRARIES} pthread dl)
 add_test(NAME cache_control_tests COMMAND test_cache_control)
 
-install(TARGETS cc-oai-gateway DESTINATION bin)
+add_executable(mock_server tests/mock_server.c)
+target_include_directories(mock_server PRIVATE ${LIBEVENT_INCLUDE_DIRS})
+target_link_directories(mock_server PRIVATE ${LIBEVENT_LIBRARY_DIRS})
+target_link_libraries(mock_server PRIVATE ${LIBEVENT_LIBRARIES})
+
+install(TARGETS cc-oai-gateway mock_server DESTINATION bin)
 install(DIRECTORY web config DESTINATION share/cc-oai-gateway)

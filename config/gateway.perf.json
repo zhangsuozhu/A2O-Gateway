@@ -1,0 +1,16 @@
+{
+	"listen_host":	"0.0.0.0",
+	"listen_port":	8080,
+	"log_level":	"error",
+	"gateway_api_key":	"",
+	"worker_threads":	8,
+	"models":	[{
+			"id":	"perf-test",
+			"provider":	"mock",
+			"base_url":	"http://127.0.0.1:9001/v1",
+			"upstream_model":	"mock-model",
+			"api_key":	""
+		}],
+	"active_model":	"perf-test",
+	"admin_password":	""
+}

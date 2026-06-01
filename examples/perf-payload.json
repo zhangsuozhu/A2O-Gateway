@@ -1,0 +1,8 @@
+{
+  "model": "perf-test",
+  "max_tokens": 100,
+  "messages": [
+    {"role": "user", "content": "Hello"}
+  ],
+  "stream": false
+}

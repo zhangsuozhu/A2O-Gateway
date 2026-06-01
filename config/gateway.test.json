@@ -1,0 +1,25 @@
+{
+	"listen_host":	"0.0.0.0",
+	"listen_port":	8082,
+	"log_level":	"info",
+	"realtime_print":	"false",
+	"gateway_api_key":	"",
+	"worker_threads":	4,
+	"models":	[{
+			"id":	"mock-model",
+			"provider":	"mock",
+			"priority":	10,
+			"enabled":	true,
+			"base_url":	"http://127.0.0.1:9000/v1",
+			"upstream_model":	"mock-model",
+			"api_key":	"",
+			"extra_body":	{},
+			"params":	{
+				"temperature":	0.2,
+				"top_p":	0.95,
+				"max_tokens":	4096
+			}
+		}],
+	"active_model":	"mock-model",
+	"admin_password":	""
+}
