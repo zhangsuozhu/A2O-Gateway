@@ -290,6 +290,14 @@ static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double window
     cJSON_AddNumberToObject(obj, "http_4xx", (double)entry->http_4xx);
     cJSON_AddNumberToObject(obj, "http_5xx", (double)entry->http_5xx);
     cJSON_AddNumberToObject(obj, "curl_errors", (double)entry->curl_errors);
+    /* 提示词缓存 */
+    cJSON_AddNumberToObject(obj, "cache_read_input_tokens", (double)entry->cache_read_input_tokens);
+    cJSON_AddNumberToObject(obj, "cache_creation_input_tokens", (double)entry->cache_creation_input_tokens);
+    {
+        uint64_t total_in = entry->cache_read_input_tokens + entry->cache_creation_input_tokens + entry->input_tokens;
+        double rate = (total_in > 0) ? (double)entry->cache_read_input_tokens / (double)total_in : 0.0;
+        cJSON_AddNumberToObject(obj, "cache_hit_rate", rate);
+    }
     cJSON_AddNumberToObject(obj, "first_seen", (double)entry->first_seen);
     cJSON_AddNumberToObject(obj, "last_seen", (double)entry->last_seen);
 
@@ -402,4 +410,73 @@ void stats_reset(void) {
     G_STATS.sliding_last_second = time(NULL);
     pthread_mutex_unlock(&G_STATS.lock);
     log_msg("INFO", "stats reset");
+}
+
+/* ====================================================================== */
+/*  提示词缓存统计                                                       */
+/* ====================================================================== */
+
+/* 缓存读：上游按 0.1x 计费 → 节省 0.9x
+ * 缓存写：上游按 1.25x 计费 → 净亏 0.25x
+ * 阈值常量显式写出，便于调参 */
+static const double CACHE_READ_DISCOUNT  = 0.9;
+static const double CACHE_WRITE_PREMIUM  = 0.25;
+
+void stats_record_cache_read(const char *model, const char *provider, unsigned long tokens) {
+    pthread_mutex_lock(&G_STATS.lock);
+    model_stat_entry_t *e = get_model_entry(model, provider);
+    e->cache_read_input_tokens += tokens;
+    double per_token = e->input_price_per_million / 1e6;
+    e->saved_cost_usd += (double)tokens * per_token * CACHE_READ_DISCOUNT;
+    pthread_mutex_unlock(&G_STATS.lock);
+}
+
+void stats_record_cache_creation(const char *model, const char *provider, unsigned long tokens) {
+    pthread_mutex_lock(&G_STATS.lock);
+    model_stat_entry_t *e = get_model_entry(model, provider);
+    e->cache_creation_input_tokens += tokens;
+    double per_token = e->input_price_per_million / 1e6;
+    e->saved_cost_usd -= (double)tokens * per_token * CACHE_WRITE_PREMIUM;
+    pthread_mutex_unlock(&G_STATS.lock);
+}
+
+unsigned long stats_get_cache_read(const char *model, const char *provider) {
+    pthread_mutex_lock(&G_STATS.lock);
+    model_stat_entry_t *e = get_model_entry(model, provider);
+    unsigned long v = (unsigned long)e->cache_read_input_tokens;
+    pthread_mutex_unlock(&G_STATS.lock);
+    return v;
+}
+
+unsigned long stats_get_cache_creation(const char *model, const char *provider) {
+    pthread_mutex_lock(&G_STATS.lock);
+    model_stat_entry_t *e = get_model_entry(model, provider);
+    unsigned long v = (unsigned long)e->cache_creation_input_tokens;
+    pthread_mutex_unlock(&G_STATS.lock);
+    return v;
+}
+
+double stats_get_saved_cost(const char *model, const char *provider) {
+    pthread_mutex_lock(&G_STATS.lock);
+    model_stat_entry_t *e = get_model_entry(model, provider);
+    double v = e->saved_cost_usd;
+    pthread_mutex_unlock(&G_STATS.lock);
+    return v;
+}
+
+void stats_reset_for_test(void) {
+    pthread_mutex_lock(&G_STATS.lock);
+    memset(&G_STATS, 0, sizeof(G_STATS));
+    G_STATS.start_time = time(NULL);
+    G_STATS.min_latency_ms = -1.0;
+    G_STATS.sliding_last_second = time(NULL);
+    for (int i = 0; i < MAX_MODEL_STATS; i++) G_STATS.models[i].min_latency_ms = -1.0;
+    pthread_mutex_unlock(&G_STATS.lock);
+}
+
+void stats_set_input_price_for_test(const char *model, double price_per_million) {
+    pthread_mutex_lock(&G_STATS.lock);
+    model_stat_entry_t *e = get_model_entry(model, "test");
+    e->input_price_per_million = price_per_million;
+    pthread_mutex_unlock(&G_STATS.lock);
 }

@@ -46,6 +46,11 @@ typedef struct model_stat_entry {
     uint64_t http_4xx;
     uint64_t http_5xx;
     uint64_t curl_errors;
+    /* 提示词缓存 */
+    uint64_t cache_read_input_tokens;
+    uint64_t cache_creation_input_tokens;
+    double   saved_cost_usd;
+    double   input_price_per_million;  /* USD / 1M tokens */
     time_t first_seen;
     time_t last_seen;
     sliding_bucket_t sliding[SLIDING_SLOTS];
@@ -127,5 +132,16 @@ cJSON *stats_get_json(void);
 
 /* 重置统计 */
 void stats_reset(void);
+
+/* ---------- 提示词缓存统计 ---------- */
+void        stats_record_cache_read    (const char *model, const char *provider, unsigned long tokens);
+void        stats_record_cache_creation(const char *model, const char *provider, unsigned long tokens);
+unsigned long stats_get_cache_read    (const char *model, const char *provider);
+unsigned long stats_get_cache_creation(const char *model, const char *provider);
+double        stats_get_saved_cost    (const char *model, const char *provider);
+
+/* test-only */
+void stats_reset_for_test(void);
+void stats_set_input_price_for_test(const char *model, double price_per_million);
 
 #endif

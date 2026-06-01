@@ -596,8 +596,30 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
     if (cJSON_IsObject(usage)) {
         long pt = json_get_long(usage, "prompt_tokens", -1);
         long ct = json_get_long(usage, "completion_tokens", -1);
-        if (pt >= 0) job->stream_state.prompt_tokens = pt;
-        if (ct >= 0) job->stream_state.completion_tokens = ct;
+        if (pt > 0) {
+            job->stream_state.prompt_tokens = pt;
+            log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=%ld", job->client_model, pt);
+        } else if (pt == 0) {
+            log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=0 (ignored, keep_estimate=%ld)",
+                    job->client_model, job->stream_state.prompt_tokens);
+        }
+        if (ct >= 0) {
+            job->stream_state.completion_tokens = ct;
+            log_msg("DEBUG", "STREAM_USAGE model=%s completion_tokens=%ld", job->client_model, ct);
+        }
+        /* 提示词缓存：Anthropic / Bailian 格式 */
+        long cache_read = json_get_long(usage, "cache_read_input_tokens", 0);
+        long cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
+        if (cache_read > 0 || cache_creation > 0) {
+            const char *m = job->upstream_model ? job->upstream_model : job->client_model;
+            const char *p = job->provider_name ? job->provider_name : "unknown";
+            if (cache_read > 0)
+                stats_record_cache_read(m, p, (unsigned long)cache_read);
+            if (cache_creation > 0)
+                stats_record_cache_creation(m, p, (unsigned long)cache_creation);
+            log_msg("DEBUG", "STREAM_CACHE model=%s cache_read=%ld cache_creation=%ld",
+                    job->client_model, cache_read, cache_creation);
+        }
     }
     cJSON *choices = cJSON_GetObjectItemCaseSensitive(root, "choices");
     cJSON *ch = cJSON_IsArray(choices) ? cJSON_GetArrayItem(choices, 0) : NULL;
@@ -675,8 +697,17 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
     if (cJSON_IsObject(usage)) {
         long in_tok = json_get_long(usage, "input_tokens", -1);
         long out_tok = json_get_long(usage, "output_tokens", -1);
-        if (in_tok >= 0) job->stream_state.prompt_tokens = in_tok;
-        if (out_tok >= 0) job->stream_state.completion_tokens = out_tok;
+        if (in_tok > 0) {
+            job->stream_state.prompt_tokens = in_tok;
+            log_msg("DEBUG", "ANTH_USAGE model=%s input_tokens=%ld", job->client_model, in_tok);
+        } else if (in_tok == 0) {
+            log_msg("DEBUG", "ANTH_USAGE model=%s input_tokens=0 (ignored, keep_estimate=%ld)",
+                    job->client_model, job->stream_state.prompt_tokens);
+        }
+        if (out_tok >= 0) {
+            job->stream_state.completion_tokens = out_tok;
+            log_msg("DEBUG", "ANTH_USAGE model=%s output_tokens=%ld", job->client_model, out_tok);
+        }
     }
     /* message_start 事件的 usage 嵌套在 message 对象内 */
     cJSON *msg = cJSON_GetObjectItemCaseSensitive(root, "message");
@@ -685,8 +716,17 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
         if (cJSON_IsObject(msg_usage)) {
             long in_tok = json_get_long(msg_usage, "input_tokens", -1);
             long out_tok = json_get_long(msg_usage, "output_tokens", -1);
-            if (in_tok >= 0) job->stream_state.prompt_tokens = in_tok;
-            if (out_tok >= 0) job->stream_state.completion_tokens = out_tok;
+            if (in_tok > 0) {
+                job->stream_state.prompt_tokens = in_tok;
+                log_msg("DEBUG", "ANTH_USAGE model=%s msg.input_tokens=%ld", job->client_model, in_tok);
+            } else if (in_tok == 0) {
+                log_msg("DEBUG", "ANTH_USAGE model=%s msg.input_tokens=0 (ignored, keep_estimate=%ld)",
+                        job->client_model, job->stream_state.prompt_tokens);
+            }
+            if (out_tok >= 0) {
+                job->stream_state.completion_tokens = out_tok;
+                log_msg("DEBUG", "ANTH_USAGE model=%s msg.output_tokens=%ld", job->client_model, out_tok);
+            }
         }
     }
     cJSON_Delete(root);

@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include "types.h"
+#include <cjson/cJSON.h>
 
 /**
  * @brief 安全的字符串复制函数
@@ -127,5 +128,28 @@ cJSON *openai_message_to_anthropic_content(cJSON *msg);
  * @note 如果 body 解析失败，返回错误对象；否则提取 choices、usage 等字段
  */
 cJSON *convert_openai_response_to_anthropic(const char *body, const char *client_model);
+
+/* ---------- cache_control 自动注入 ---------- */
+
+/**
+ * @brief 生成 OpenAI 兼容的 cache_control 字段
+ * @return 返回新的 cJSON 对象 {"type":"ephemeral"}，调用方负责 cJSON_Delete
+ */
+cJSON *cache_control_ephemeral(void);
+
+/**
+ * @brief 估算文本的近似 token 数（启发式：词数 × 1.3）
+ */
+int approx_token_count(const char *text);
+
+/**
+ * @brief 按 model_cfg.cache_policy 决定是否给 system 消息注入 cache_control
+ */
+bool convert_inject_system_cache(cJSON *out_sys_msg, cJSON *anth_system, const cJSON *model_cfg);
+
+/**
+ * @brief 按 model_cfg.cache_policy 决定是否给最后一个 tool 注入 cache_control
+ */
+bool convert_inject_tools_cache(cJSON *out_tools, const cJSON *model_cfg);
 
 #endif

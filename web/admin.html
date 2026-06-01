@@ -235,6 +235,18 @@
       </div>
 
       <div class="card">
+        <h2>💰 提示词缓存</h2>
+        <div class="stats-grid" id="cacheOverview">
+          <div class="stat-card"><div class="label">缓存读 tokens</div><div class="value" id="statCacheRead">-</div></div>
+          <div class="stat-card"><div class="label">缓存写 tokens</div><div class="value" id="statCacheCreation">-</div></div>
+          <div class="stat-card"><div class="label">缓存命中率</div><div class="value" id="statCacheHitRate">-</div></div>
+        </div>
+        <div class="hint" style="margin-top:8px;font-size:11px;color:#8899b4">
+          命中率 = 缓存读 / (缓存读 + 缓存写 + 普通输入)
+        </div>
+      </div>
+
+      <div class="card">
         <h2>🤖 模型统计</h2>
         <div id="statsModelsWrap">
           <div class="stats-wrap">
@@ -256,6 +268,9 @@
                 <th class="num">平均延迟</th>
                 <th class="num">最小</th>
                 <th class="num">最大</th>
+                <th class="num">缓存读</th>
+                <th class="num">缓存写</th>
+                <th class="num">命中率</th>
               </tr>
             </thead>
             <tbody id="statsModelsBody"></tbody>
@@ -273,6 +288,7 @@
 
       <div class="actions">
         <button class="red" onclick="resetStats()">🗑 重置统计</button>
+        <button class="red" onclick="resetDb()" style="margin-left:8px">💣 清空数据库</button>
       </div>
     </div>
 
@@ -1000,7 +1016,7 @@ function renderStatsError(msg) {
   $('statAvgInputSpeed').textContent = '!';
   $('statAvgOutputSpeed').textContent = '!';
   // 模型表格显示错误行
-  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="15" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th><th class="num">缓存读</th><th class="num">缓存写</th><th class="num">命中率</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="18" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
   $('statsChartWrap').innerHTML = '<div class="stats-empty">' + esc(msg) + '</div>';
 }
 
@@ -1019,12 +1035,25 @@ function renderStats(data) {
   $('statAvgOutputSpeed').textContent = fmtTokensPerSec(g.avg_output_tokens_per_sec);
 
   // 模型统计 - 先确保表格结构存在
-  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th></tr></thead><tbody id="statsModelsBody"></tbody></table></div>';
+  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th><th class="num">缓存读</th><th class="num">缓存写</th><th class="num">命中率</th></tr></thead><tbody id="statsModelsBody"></tbody></table></div>';
   var tbody = $('statsModelsBody');
   tbody.innerHTML = '';
   var models = data.models || [];
+
+  // 提示词缓存（跨所有模型聚合）
+  var totalCacheRead = 0, totalCacheCreation = 0;
+  for (var j = 0; j < models.length; j++) {
+    totalCacheRead     += (models[j].cache_read_input_tokens     || 0);
+    totalCacheCreation += (models[j].cache_creation_input_tokens || 0);
+  }
+  var totalIn = (g.total_input_tokens || 0) + totalCacheRead + totalCacheCreation;
+  var hitRate = totalIn > 0 ? totalCacheRead / totalIn : 0;
+  $('statCacheRead').textContent     = fmtNum(totalCacheRead);
+  $('statCacheCreation').textContent = fmtNum(totalCacheCreation);
+  $('statCacheHitRate').textContent  = (totalCacheRead + totalCacheCreation) > 0 ? fmtPct(hitRate, 1) : '-';
+
   if (!models.length) {
-    tbody.innerHTML = '<tr><td colspan="15" class="stats-empty">暂无模型统计数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="18" class="stats-empty">暂无模型统计数据</td></tr>';
   } else {
     for (var i = 0; i < models.length; i++) {
       var m = models[i];
@@ -1044,7 +1073,10 @@ function renderStats(data) {
         '<td class="num">' + fmtTokensPerSec(m.avg_output_tokens_per_sec) + '</td>' +
         '<td class="num">' + fmtMs(m.avg_latency_ms) + '</td>' +
         '<td class="num">' + fmtMs(m.min_latency_ms) + '</td>' +
-        '<td class="num">' + fmtMs(m.max_latency_ms) + '</td>';
+        '<td class="num">' + fmtMs(m.max_latency_ms) + '</td>' +
+        '<td class="num">' + fmtNum(m.cache_read_input_tokens || 0) + '</td>' +
+        '<td class="num">' + fmtNum(m.cache_creation_input_tokens || 0) + '</td>' +
+        '<td class="num">' + fmtPct(m.cache_hit_rate || 0) + '</td>';
       tbody.appendChild(tr);
     }
   }
@@ -1081,6 +1113,23 @@ async function resetStats() {
     loadStats();
   } catch (e) {
     toast('重置失败: ' + (e.message || String(e)), true);
+  }
+}
+
+async function resetDb() {
+  if (!confirm('确定要清空数据库？所有请求历史、小时/日/模型聚合统计将被删除，此操作不可恢复。')) return;
+  try {
+    var r = await fetch('/admin/api/db/reset', { method: 'POST', headers: apiHeaders() });
+    if (!r.ok) { var t = await r.text(); toast('清空失败: ' + t, true); return; }
+    var data = await r.json();
+    if (data.ok) {
+      toast('✅ 数据库已清空');
+      queryHistory();
+    } else {
+      toast('清空失败', true);
+    }
+  } catch (e) {
+    toast('清空失败: ' + (e.message || String(e)), true);
   }
 }
 

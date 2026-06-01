@@ -407,6 +407,7 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
         }
         cJSON_AddItemToObject(sys, "content", sys_content);
         cJSON_AddItemToArray(messages, sys);
+        convert_inject_system_cache(sys, system, model_cfg);
     }
 
     cJSON *anth_messages = cJSON_GetObjectItemCaseSensitive(anth_req, "messages");
@@ -460,7 +461,10 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
     }
 
     cJSON *tools = anthropic_tools_to_openai(cJSON_GetObjectItemCaseSensitive(anth_req, "tools"));
-    if (tools) json_set_item(out, "tools", tools);
+    if (tools) {
+        convert_inject_tools_cache(tools, model_cfg);
+        json_set_item(out, "tools", tools);
+    }
     cJSON *tc = anthropic_tool_choice_to_openai(cJSON_GetObjectItemCaseSensitive(anth_req, "tool_choice"));
     if (tc) json_set_item(out, "tool_choice", tc);
 
@@ -668,4 +672,92 @@ cJSON *convert_openai_response_to_anthropic(const char *body, const char *client
     cJSON_AddItemToObject(out, "usage", usage);
     cJSON_Delete(oai);
     return out;
+}
+
+/* ====================================================================== */
+/*  cache_control 自动注入（OpenAI 兼容层）                              */
+/* ====================================================================== */
+
+cJSON *cache_control_ephemeral(void) {
+    cJSON *cc = cJSON_CreateObject();
+    cJSON_AddStringToObject(cc, "type", "ephemeral");
+    return cc;
+}
+
+int approx_token_count(const char *text) {
+    if (!text) return 0;
+    int words = 0;
+    bool in_word = false;
+    for (const char *p = text; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c == ' ' || c == '\n' || c == '\t' || c == '\r') in_word = false;
+        else if (!in_word) { in_word = true; words++; }
+    }
+    return (int)(words * 1.3f);
+}
+
+static const char *cc_get_policy(const cJSON *cfg) {
+    if (!cfg) return "off";
+    cJSON *p = cJSON_GetObjectItemCaseSensitive(cfg, "cache_policy");
+    if (!cJSON_IsString(p) || !p->valuestring) return "off";
+    return p->valuestring;
+}
+
+static int cc_get_min_tokens(const cJSON *cfg) {
+    if (!cfg) return 1024;
+    cJSON *n = cJSON_GetObjectItemCaseSensitive(cfg, "min_cache_tokens");
+    if (!cJSON_IsNumber(n)) return 1024;
+    return (int)n->valuedouble;
+}
+
+static const char *cc_extract_system_text(cJSON *anth_system) {
+    if (!anth_system) return NULL;
+    if (cJSON_IsString(anth_system)) return anth_system->valuestring;
+    if (cJSON_IsArray(anth_system)) {
+        cJSON *blk;
+        cJSON_ArrayForEach(blk, anth_system) {
+            cJSON *t = cJSON_GetObjectItemCaseSensitive(blk, "type");
+            cJSON *text = cJSON_GetObjectItemCaseSensitive(blk, "text");
+            if (cJSON_IsString(t) && strcmp(t->valuestring, "text") == 0 && cJSON_IsString(text))
+                return text->valuestring;
+        }
+    }
+    return NULL;
+}
+
+bool convert_inject_system_cache(cJSON *out_sys_msg, cJSON *anth_system, const cJSON *model_cfg) {
+    if (!out_sys_msg) return false;
+    if (strcmp(cc_get_policy(model_cfg), "auto") != 0) return false;
+
+    cJSON *content = cJSON_GetObjectItemCaseSensitive(out_sys_msg, "content");
+    const char *text = NULL;
+    if (cJSON_IsString(content) && content->valuestring) text = content->valuestring;
+    if (!text) text = cc_extract_system_text(anth_system);
+    if (!text) return false;
+
+    int min_tokens = cc_get_min_tokens(model_cfg);
+    if (approx_token_count(text) < min_tokens) return false;
+
+    cJSON *arr = cJSON_CreateArray();
+    cJSON *blk = cJSON_CreateObject();
+    cJSON_AddStringToObject(blk, "type", "text");
+    cJSON_AddStringToObject(blk, "text", text);
+    cJSON_AddItemToObject(blk, "cache_control", cache_control_ephemeral());
+    cJSON_AddItemToArray(arr, blk);
+    cJSON_ReplaceItemInObjectCaseSensitive(out_sys_msg, "content", arr);
+    return true;
+}
+
+bool convert_inject_tools_cache(cJSON *out_tools, const cJSON *model_cfg) {
+    if (!out_tools || !cJSON_IsArray(out_tools)) return false;
+    if (cJSON_GetArraySize(out_tools) == 0) return false;
+    if (strcmp(cc_get_policy(model_cfg), "auto") != 0) return false;
+
+    cJSON *last = cJSON_GetArrayItem(out_tools, cJSON_GetArraySize(out_tools) - 1);
+    cJSON *fn = cJSON_GetObjectItemCaseSensitive(last, "function");
+    if (!fn) return false;
+    if (cJSON_GetObjectItemCaseSensitive(fn, "cache_control")) return false;
+
+    cJSON_AddItemToObject(fn, "cache_control", cache_control_ephemeral());
+    return true;
 }
