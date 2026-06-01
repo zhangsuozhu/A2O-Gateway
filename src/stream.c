@@ -740,8 +740,13 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
     if (!root) return;
     cJSON *usage = cJSON_GetObjectItemCaseSensitive(root, "usage");
     if (cJSON_IsObject(usage)) {
+        /* 先尝试 Anthropic 格式 input_tokens/output_tokens */
         long in_tok = json_get_long(usage, "input_tokens", -1);
         long out_tok = json_get_long(usage, "output_tokens", -1);
+        /* 回退到 OpenAI 格式 prompt_tokens/completion_tokens */
+        if (in_tok < 0) in_tok = json_get_long(usage, "prompt_tokens", -1);
+        if (out_tok < 0) out_tok = json_get_long(usage, "completion_tokens", -1);
+
         if (in_tok > 0) {
             job->stream_state.prompt_tokens = in_tok;
             log_msg("DEBUG", "ANTH_USAGE model=%s input_tokens=%ld", job->client_model, in_tok);
@@ -753,7 +758,32 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
             job->stream_state.completion_tokens = out_tok;
             log_msg("DEBUG", "ANTH_USAGE model=%s output_tokens=%ld", job->client_model, out_tok);
         }
-        extract_anthropic_cache_stats(job, usage);
+
+        /* 缓存：兼容 Anthropic / DeepSeek / OpenAI / Moonshot 格式 */
+        long cr = json_get_long(usage, "cache_read_input_tokens", 0);
+        if (cr == 0) cr = json_get_long(usage, "prompt_cache_hit_tokens", 0);
+        if (cr == 0) {
+            cJSON *d = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
+            if (cJSON_IsObject(d)) cr = json_get_long(d, "cached_tokens", 0);
+        }
+        long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
+        if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
+        log_msg("DEBUG", "STREAM_CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
+                job->client_model, job->prompt_tokens_includes_cache ? "true" : "false",
+                job->stream_state.prompt_tokens, cr, cc);
+        if (!job->prompt_tokens_includes_cache && job->stream_state.prompt_tokens > 0) {
+            job->stream_state.prompt_tokens = job->stream_state.prompt_tokens + cr + cc;
+            log_msg("DEBUG", "STREAM_CACHE_FIX model=%s pt_after=%ld",
+                    job->client_model, job->stream_state.prompt_tokens);
+        }
+        if (cr > 0 || cc > 0) {
+            job->stream_state.cache_read_input_tokens = cr;
+            job->stream_state.cache_creation_input_tokens = cc;
+            const char *m = job->upstream_model ? job->upstream_model : job->client_model;
+            const char *p = job->provider_name ? job->provider_name : "unknown";
+            if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
+            if (cc > 0) stats_record_cache_creation(m, p, (unsigned long)cc);
+        }
     }
     /* message_start 事件的 usage 嵌套在 message 对象内 */
     cJSON *msg = cJSON_GetObjectItemCaseSensitive(root, "message");
