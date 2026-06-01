@@ -386,7 +386,7 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
     curl_easy_setopt(job->easy, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(job->easy, CURLOPT_CONNECTTIMEOUT_MS, 15000L);
     curl_easy_setopt(job->easy, CURLOPT_TIMEOUT_MS, job->stream ? 0L : 600000L);
-    curl_easy_setopt(job->easy, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
+    curl_easy_setopt(job->easy, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     curl_easy_setopt(job->easy, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(job->easy, CURLOPT_SSL_VERIFYHOST, 2L);
 
@@ -416,6 +416,10 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
     }
     curl_easy_setopt(job->easy, CURLOPT_HTTPHEADER, job->headers);
     curl_multi_add_handle(w->multi, job->easy);
+    { struct timespec t1; clock_gettime(CLOCK_MONOTONIC, &t1);
+      double setup_ms = (t1.tv_sec - t0.tv_sec)*1000.0 + (t1.tv_nsec - t0.tv_nsec)/1000000.0;
+      log_msg("INFO", "WORKER_SETUP model=%s queue_wait=%.2fms curl_setup=%.2fms",
+          job->client_model, qw, setup_ms); }
 }
 
 /**
