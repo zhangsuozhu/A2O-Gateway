@@ -151,8 +151,12 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         json_out = cJSON_PrintUnformatted(anth);
                         cJSON *usage = cJSON_GetObjectItemCaseSensitive(anth, "usage");
                         if (usage) {
+                            /* 透传模式：上游可能是 Anthropic 格式或 OpenAI 格式 */
+                            long pt = (long)json_get_long(usage, "prompt_tokens", 0);
                             input_tokens = (long)json_get_long(usage, "input_tokens", 0);
                             output_tokens = (long)json_get_long(usage, "output_tokens", 0);
+                            if (input_tokens == 0 && pt > 0) input_tokens = pt;  /* 上游返回 OpenAI 格式 */
+                            if (output_tokens == 0) output_tokens = (long)json_get_long(usage, "completion_tokens", 0);
                             /* 缓存：兼容 Anthropic / DeepSeek / OpenAI / Moonshot 格式 */
                             long cr = json_get_long(usage, "cache_read_input_tokens", 0);
                             if (cr == 0) cr = json_get_long(usage, "prompt_cache_hit_tokens", 0);
@@ -164,6 +168,13 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                             }
                             long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
                             if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
+                            log_msg("DEBUG", "PASS_CACHE_FIX model=%s includes=%s input_before=%ld pt=%ld cr=%ld cc=%ld",
+                                    job->client_model, job->prompt_tokens_includes_cache ? "true" : "false", input_tokens, pt, cr, cc);
+                            /* 如果上游返回 OpenAI 格式且 prompt_tokens 不包含缓存，需修正 */
+                            if (pt > 0 && !job->prompt_tokens_includes_cache) {
+                                input_tokens = pt + cr + cc;
+                                log_msg("DEBUG", "PASS_CACHE_FIX model=%s input_after=%ld", job->client_model, input_tokens);
+                            }
                             job->stream_state.cache_read_input_tokens = cr;
                             job->stream_state.cache_creation_input_tokens = cc;
                             const char *m = job->upstream_model ? job->upstream_model : job->client_model;
