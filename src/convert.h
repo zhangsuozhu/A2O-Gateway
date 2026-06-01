@@ -129,6 +129,31 @@ cJSON *openai_message_to_anthropic_content(cJSON *msg);
  */
 cJSON *convert_openai_response_to_anthropic(const char *body, const char *client_model);
 
+/**
+ * @brief 透传模式响应中覆盖 / 注入 model 字段
+ * @param body upstream 原始响应 JSON 字符串
+ * @param gateway_model 网关配置的模型 ID（用于覆盖 / 注入）
+ * @return 返回新的 JSON 字符串，model 字段等于 gateway_model；
+ *         若 body 为空或解析失败，返回原 body 的副本。
+ * @note 行为：
+ *         - 若 body 可解析为 JSON：顶层 model 字段无论缺失 / 为空 / 有值，
+ *           都被覆盖为 gateway_model；
+ *         - 其他字段保持原样。
+ *         适用于 PT_ANTHROPIC 透传响应（Anthropic 顶层 .model 字段）。
+ */
+char *passthrough_anthropic_override_model(const char *body, const char *gateway_model);
+
+/**
+ * @brief 透传模式响应中覆盖 / 注入顶层 model 字段（OpenAI 协议）
+ * @param body upstream 原始响应 JSON 字符串
+ * @param gateway_model 网关配置的模型 ID
+ * @return 返回新的 JSON 字符串
+ * @note 行为同 passthrough_anthropic_override_model，但适用于
+ *         OpenAI Chat Completions 协议（顶层 .model 字段位置一致）。
+ *         用于 PT_OPENAI 非流式响应。
+ */
+char *passthrough_openai_override_model(const char *body, const char *gateway_model);
+
 /* ---------- cache_control 自动注入 ---------- */
 
 /**

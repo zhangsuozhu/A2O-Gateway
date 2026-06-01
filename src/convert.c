@@ -664,6 +664,7 @@ cJSON *convert_openai_response_to_anthropic(const char *body, const char *client
     if (!oai) {
         cJSON *err = cJSON_CreateObject();
         cJSON_AddStringToObject(err, "type", "error");
+        cJSON_AddStringToObject(err, "model", client_model ? client_model : "claude-code-gateway");
         cJSON *e = cJSON_CreateObject();
         cJSON_AddStringToObject(e, "type", "invalid_upstream_response");
         cJSON_AddStringToObject(e, "message", "upstream did not return valid JSON");
@@ -678,6 +679,7 @@ cJSON *convert_openai_response_to_anthropic(const char *body, const char *client
         if (!err_msg) err_msg = "upstream returned an error";
         cJSON *err = cJSON_CreateObject();
         cJSON_AddStringToObject(err, "type", "error");
+        cJSON_AddStringToObject(err, "model", client_model ? client_model : "claude-code-gateway");
         cJSON *e = cJSON_CreateObject();
         cJSON_AddStringToObject(e, "type", "upstream_error");
         cJSON_AddStringToObject(e, "message", err_msg);
@@ -709,6 +711,51 @@ cJSON *convert_openai_response_to_anthropic(const char *body, const char *client
     cJSON_AddItemToObject(out, "usage", usage);
     cJSON_Delete(oai);
     return out;
+}
+
+/* ====================================================================== */
+/*  透传模式 model 字段覆盖 / 注入                                         */
+/* ====================================================================== */
+
+/**
+ * @brief 覆盖或注入 JSON 对象的顶层 model 字段
+ *
+ * 行为：
+ *   - 若 obj 可解析为 JSON 对象：
+ *     * model 字段存在且为非空字符串：替换为 gateway_model
+ *     * model 字段缺失、为 null、为空字符串：注入 gateway_model
+ *     * 其他字段保持原样
+ *   - 若 body 为空或解析失败：返回 body 的副本
+ *
+ * 适用 PT_ANTHROPIC / PT_OPENAI 透传模式：两者都把 model 放在顶层，
+ * 仅 SSE 流式协议细节不同（PT_OPENAI 流式每 chunk 都有 .model，
+ * PT_ANTHROPIC 流式只有 message_start 事件有 .message.model）。
+ */
+char *passthrough_anthropic_override_model(const char *body, const char *gateway_model) {
+    if (!body || !*body) return xstrdup("");
+    if (!gateway_model) gateway_model = "";
+    cJSON *root = cJSON_Parse(body);
+    if (!root) {
+        /* parse 失败：原样返回，让上游错误响应透传 */
+        return xstrdup(body);
+    }
+    cJSON *existing = cJSON_GetObjectItemCaseSensitive(root, "model");
+    if (cJSON_IsString(existing) && existing->valuestring && existing->valuestring[0]) {
+        cJSON_ReplaceItemInObjectCaseSensitive(root, "model", cJSON_CreateString(gateway_model));
+    } else {
+        cJSON_DeleteItemFromObjectCaseSensitive(root, "model");
+        cJSON_AddStringToObject(root, "model", gateway_model);
+    }
+    char *out = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return out ? out : xstrdup(body);
+}
+
+char *passthrough_openai_override_model(const char *body, const char *gateway_model) {
+    /* 当前 PT_ANTHROPIC 和 PT_OPENAI 的非流式响应顶层都使用 .model 字段，
+     * 共用同一覆盖逻辑；保留独立符号以便未来 PT_OPENAI 协议扩展时
+     * 单独演化（例如 choices[].model 注入等）。 */
+    return passthrough_anthropic_override_model(body, gateway_model);
 }
 
 /* ====================================================================== */

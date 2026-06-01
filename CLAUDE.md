@@ -76,6 +76,18 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
   -H 'Authorization: Bearer cc-local-token' \
   -d @examples/anthropic-message.json
 
+# OpenAI passthrough (monitoring only) — non-streaming
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer cc-local-token' \
+  -d '{"model":"qwen-coder","messages":[{"role":"user","content":"hi"}]}'
+
+# OpenAI passthrough — streaming
+curl -N http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer cc-local-token' \
+  -d '{"model":"qwen-coder","stream":true,"messages":[{"role":"user","content":"count to 3"}]}'
+
 # Memory check
 valgrind --leak-check=full ./build/cc-oai-gateway ./config/gateway.local.json
 
@@ -90,7 +102,7 @@ This is a C11 gateway that translates Anthropic Messages API ↔ OpenAI Chat Com
 ### Data Flow
 
 ```
-Claude Code → HTTP POST /v1/messages (Anthropic format)
+Claude Code (Anthropic) → POST /v1/messages
                 → main.c (libevent HTTP server)
                 → handlers.c (route handler, auth check)
                 → convert.c (Anthropic → OpenAI request conversion)
@@ -98,7 +110,22 @@ Claude Code → HTTP POST /v1/messages (Anthropic format)
                 → upstream HTTP POST /v1/chat/completions (OpenAI format)
                 ← response: stream.c (SSE parse + OpenAI → Anthropic conversion)
                 ← handlers.c (send response to Claude Code)
+
+OpenAI SDK / curl       → POST /v1/chat/completions
+                → handle_chat_completions (handlers.c)
+                → enqueue_job → worker.c → upstream /chat/completions (passthrough)
+                ← upstream response forwarded as-is, usage extracted for stats only
 ```
+
+Three handling modes share the same job/worker plumbing, distinguished by `gateway_job.passthrough`:
+
+| Mode (`passthrough_mode_t`) | Client protocol | Upstream URL | Upstream protocol | Body transform | Response transform |
+|---|---|---|---|---|---|
+| `PT_NONE` | Anthropic `/v1/messages` | `/chat/completions` | OpenAI | Anthropic → OpenAI | OpenAI → Anthropic |
+| `PT_ANTHROPIC` (model `api_mode = "passthrough"`) | Anthropic `/v1/messages` | `/v1/messages` | Anthropic | model field swap | as-is |
+| `PT_OPENAI` (route `/v1/chat/completions`) | OpenAI `/v1/chat/completions` | `/chat/completions` | OpenAI | model field swap | as-is (monitoring only) |
+
+All three modes record stats / history / cache tokens identically via `stats.c` + `db.c`.
 
 ### Source Layout
 
@@ -200,6 +227,7 @@ OpenAI models like DeepSeek-R1 return `choices[0].delta.reasoning_content` in st
 
 - **Add a new model route**: Add entry to `config/gateway.local.json` under `models[]`. No code change needed.
 - **Add a new HTTP endpoint**: Define handler in `handlers.c`, register in `handle_root()` (find the route table ~line 645).
+- **Use a model from an OpenAI client**: Point the client at `http://<gateway>/v1/chat/completions` — the route is OpenAI passthrough by design, independent of the model's `api_mode`. Any model with a valid `base_url`/`api_key` is reachable both via `/v1/messages` (with protocol conversion or Anthropic passthrough depending on `api_mode`) and via `/v1/chat/completions` (raw OpenAI passthrough).
 - **Modify protocol conversion**: Edit `convert.c` (request/build side) or `stream.c` (response/streaming side).
 - **Change config schema**: Update `config.h/c` accessors (`config_get_*` / `config_set_*`) and `web/admin.html` form fields.
 - **Add vendor-specific extra params**: Use `extra_body` in model config (e.g., `{"enable_search": true}`). No code change needed for simple key-value extras.

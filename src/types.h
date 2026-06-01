@@ -145,6 +145,22 @@ typedef enum {
     JOB_RECEIVING = 2 /* 正在接收上游响应数据 */
 } job_state_t;
 
+/**
+ * @brief 透传模式枚举
+ *
+ * 描述 gateway 对单次请求所采用的协议处理策略：
+ *   - PT_NONE: 协议转换（客户端 Anthropic /v1/messages → 上游 OpenAI /chat/completions）
+ *   - PT_ANTHROPIC: Anthropic 透传（客户端 Anthropic → 上游 Anthropic，不转换）
+ *   - PT_OPENAI: OpenAI 透传（客户端 OpenAI → 上游 OpenAI，不转换，仅监控）
+ *
+ * 由 HTTP 路由 + 模型 api_mode 共同决定，详见 handlers.c。
+ */
+typedef enum {
+    PT_NONE = 0,
+    PT_ANTHROPIC = 1,
+    PT_OPENAI = 2,
+} passthrough_mode_t;
+
 typedef struct tool_stream_state {
     int openai_index;      /**< OpenAI 格式中 tool_calls 数组的下标 */
     int block_index;       /**< Anthropic 格式中 content block 的下标 */
@@ -265,7 +281,7 @@ char *user_agent;       /**< 客户端 User-Agent（透传给上游） */
 
     /* 请求模式标志 */
     bool stream;            /**< 是否为流式请求（SSE）：true=流式，false=非流式 */
-    bool passthrough;       /**< 是否为透传模式：true=不转换协议直接转发，false=Anthropic↔OpenAI 转换 */
+    passthrough_mode_t passthrough; /**< 透传模式：见 passthrough_mode_t 定义 */
     bool prompt_tokens_includes_cache; /**< provider 的 prompt_tokens 是否包含缓存 tokens */
 
     /* 实时状态（用于调试面板） */

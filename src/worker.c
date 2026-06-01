@@ -125,12 +125,13 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
             cJSON_Delete(e);
             code_out = 502;
         } else {
-            if (job->passthrough) {
+            if (job->passthrough == PT_ANTHROPIC) {
                 /* 透传模式：上游响应已是 Anthropic 格式，无需协议转换 */
                 cJSON *anth = cJSON_Parse(job->upstream_body.ptr ? job->upstream_body.ptr : "");
                 if (!anth) {
                     log_msg("ERROR", "PASSTHROUGH_PARSE_FAIL model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
                     cJSON *j = cJSON_CreateObject();
+                    cJSON_AddStringToObject(j, "model", job->client_model ? job->client_model : "");
                     cJSON *err = cJSON_CreateObject();
                     cJSON_AddStringToObject(err, "type", "conversion_error");
                     cJSON_AddStringToObject(err, "message", "failed to parse passthrough response");
@@ -143,12 +144,13 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                     cJSON *upstream_err = cJSON_GetObjectItemCaseSensitive(anth, "error");
                     if (upstream_err) {
                         log_msg("ERROR", "PASSTHROUGH_UPSTREAM_ERR model=%s", job->client_model);
-                        json_out = cJSON_PrintUnformatted(anth);
+                        char *temp = cJSON_PrintUnformatted(anth);
+                        json_out = passthrough_anthropic_override_model(temp, job->client_model);
+                        free(temp);
                         cJSON_Delete(anth);
                         code_out = 502;
                     } else {
                         log_msg("INFO", "RESP_OK model=%s (passthrough)", job->client_model);
-                        json_out = cJSON_PrintUnformatted(anth);
                         cJSON *usage = cJSON_GetObjectItemCaseSensitive(anth, "usage");
                         if (usage) {
                             /* 透传模式：上游可能是 Anthropic 格式或 OpenAI 格式 */
@@ -181,16 +183,24 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                             if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
                             if (cc > 0) stats_record_cache_creation(m, p, (unsigned long)cc);
                         }
+                        char *temp = cJSON_PrintUnformatted(anth);
+                        json_out = passthrough_anthropic_override_model(temp, job->client_model);
+                        free(temp);
                         cJSON_Delete(anth);
                         code_out = 200;
                     }
                 }
             } else {
-            /* 非流式 / 非透传：直接从原始 OpenAI 响应体中提取 usage 和缓存 token，
-             * 不经过 convert_openai_response_to_anthropic 二次转换，避免信息丢失 */
+            /* 非 Anthropic 透传：先从原始 OpenAI 响应体提取 usage 与缓存 token（共享逻辑），
+             * 然后按 PT_OPENAI / PT_NONE 决定如何生成回客户端的响应体。 */
+            bool upstream_has_error = false;
             if (job->upstream_body.ptr) {
                 cJSON *raw = cJSON_Parse(job->upstream_body.ptr);
                 if (cJSON_IsObject(raw)) {
+                    /* 上游业务错误：OpenAI 响应通常含 error 对象 */
+                    if (cJSON_GetObjectItemCaseSensitive(raw, "error")) {
+                        upstream_has_error = true;
+                    }
                     cJSON *u = cJSON_GetObjectItemCaseSensitive(raw, "usage");
                     if (cJSON_IsObject(u)) {
                         long pt = (long)json_get_long(u, "prompt_tokens", 0);
@@ -222,31 +232,48 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                 }
                 cJSON_Delete(raw);
             }
-            cJSON *anth = convert_openai_response_to_anthropic(job->upstream_body.ptr, job->client_model);
-            if (!anth) {
-                log_msg("ERROR", "CONV_FAIL model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
-                cJSON *j = cJSON_CreateObject();
-                cJSON *err = cJSON_CreateObject();
-                cJSON_AddStringToObject(err, "type", "conversion_error");
-                cJSON_AddStringToObject(err, "message", "failed to convert upstream response");
-                cJSON_AddItemToObject(j, "error", err);
-                json_out = cJSON_PrintUnformatted(j);
-                cJSON_Delete(j);
-                code_out = 502;
-            } else {
-                bool has_error = false;
-                const char *resp_type = json_get_str(anth, "type");
-                if (resp_type && strcmp(resp_type, "error") == 0) has_error = true;
-                if (has_error) {
-                    log_msg("ERROR", "UPSTREAM_ERR model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
-                    json_out = cJSON_PrintUnformatted(anth);
-                    cJSON_Delete(anth);
+
+            if (job->passthrough == PT_OPENAI) {
+                /* OpenAI 透传：原样转发上游响应体，仅做监控。
+                 * 顶层 .model 字段被覆盖为网关 id（避免暴露 upstream_model） */
+                const char *upstream_body = job->upstream_body.ptr ? job->upstream_body.ptr : "{}";
+                if (upstream_has_error) {
+                    log_msg("ERROR", "OAI_PASS_UPSTREAM_ERR model=%s", job->client_model);
+                    json_out = passthrough_openai_override_model(upstream_body, job->client_model);
                     code_out = 502;
                 } else {
-                    log_msg("INFO", "RESP_OK model=%s", job->client_model);
-                    json_out = cJSON_PrintUnformatted(anth);
-                    cJSON_Delete(anth);
+                    log_msg("INFO", "RESP_OK model=%s (openai-passthrough)", job->client_model);
+                    json_out = passthrough_openai_override_model(upstream_body, job->client_model);
                     code_out = 200;
+                }
+            } else {
+                /* PT_NONE：协议转换 OpenAI → Anthropic */
+                cJSON *anth = convert_openai_response_to_anthropic(job->upstream_body.ptr, job->client_model);
+                if (!anth) {
+                    log_msg("ERROR", "CONV_FAIL model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
+                    cJSON *j = cJSON_CreateObject();
+                    cJSON *err = cJSON_CreateObject();
+                    cJSON_AddStringToObject(err, "type", "conversion_error");
+                    cJSON_AddStringToObject(err, "message", "failed to convert upstream response");
+                    cJSON_AddItemToObject(j, "error", err);
+                    json_out = cJSON_PrintUnformatted(j);
+                    cJSON_Delete(j);
+                    code_out = 502;
+                } else {
+                    bool has_error = false;
+                    const char *resp_type = json_get_str(anth, "type");
+                    if (resp_type && strcmp(resp_type, "error") == 0) has_error = true;
+                    if (has_error) {
+                        log_msg("ERROR", "UPSTREAM_ERR model=%s upstream_body=%.*s", job->client_model, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
+                        json_out = cJSON_PrintUnformatted(anth);
+                        cJSON_Delete(anth);
+                        code_out = 502;
+                    } else {
+                        log_msg("INFO", "RESP_OK model=%s", job->client_model);
+                        json_out = cJSON_PrintUnformatted(anth);
+                        cJSON_Delete(anth);
+                        code_out = 200;
+                    }
                 }
             }
             }
@@ -390,7 +417,7 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
 
     job->headers = NULL;
     job->headers = curl_slist_append(job->headers, "Content-Type: application/json");
-    if (job->passthrough) {
+    if (job->passthrough == PT_ANTHROPIC) {
         /* Anthropic API 使用 x-api-key 和 anthropic-version 头 */
         if (job->api_key && *job->api_key) {
             char xkey[4096];
@@ -400,6 +427,7 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
         job->headers = curl_slist_append(job->headers, "anthropic-version: 2023-06-01");
         job->headers = curl_slist_append(job->headers, "Accept: application/json, text/event-stream");
     } else {
+        /* PT_NONE 与 PT_OPENAI 均使用 OpenAI 兼容鉴权头 */
         job->headers = curl_slist_append(job->headers, "Accept: application/json, text/event-stream");
         if (job->api_key && *job->api_key) {
             char auth[4096];

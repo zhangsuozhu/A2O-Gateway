@@ -317,12 +317,13 @@ static void handle_messages(struct evhttp_request *req) {
         cJSON_Delete(anth); free(body); send_error_json(req, 503, "configuration_error", "no enabled model configured"); return;
     }
     const char *api_mode = json_get_str(model, "api_mode");
-    bool passthrough = api_mode && strcmp(api_mode, "passthrough") == 0;
+    passthrough_mode_t passthrough = (api_mode && strcmp(api_mode, "passthrough") == 0)
+        ? PT_ANTHROPIC : PT_NONE;
 
     cJSON *oai = NULL;
     char *upstream_body = NULL;
     char *url = NULL;
-    if (passthrough) {
+    if (passthrough == PT_ANTHROPIC) {
         /* 透传模式：替换 model 为 upstream_model 后直接转发 */
         const char *um = json_get_str(model, "upstream_model");
         if (um && *um) {
@@ -342,7 +343,7 @@ static void handle_messages(struct evhttp_request *req) {
     const char *api_key = json_get_str(model, "api_key");
     const char *provider = json_get_str(model, "provider");
 
-    log_msg("INFO", "RECV model=%s body_len=%zu stream=%d passthrough=%d", client_model, body ? strlen(body) : 0, stream ? 1 : 0, passthrough ? 1 : 0);
+    log_msg("INFO", "RECV model=%s body_len=%zu stream=%d passthrough=%d", client_model, body ? strlen(body) : 0, stream ? 1 : 0, (int)passthrough);
     if (body) {
         size_t bl = strlen(body);
         if (bl > 4096) bl = 4096;
@@ -363,7 +364,7 @@ static void handle_messages(struct evhttp_request *req) {
     job->stream = stream;
     job->passthrough = passthrough;
     /* 透传模式上游是 Anthropic 协议，input_tokens 不含 cache_read */
-    job->prompt_tokens_includes_cache = config_get_prompt_tokens_includes_cache(model, !passthrough);
+    job->prompt_tokens_includes_cache = config_get_prompt_tokens_includes_cache(model, passthrough != PT_ANTHROPIC);
     job->stream_state.client_model = xstrdup(job->client_model);
     /* 不估算 prompt tokens，只认上游返回的真实 usage 值 */
     job->stream_state.prompt_tokens = 0;
@@ -374,7 +375,7 @@ static void handle_messages(struct evhttp_request *req) {
     enqueue_job(job);
 
     rt_print("[REQ] model=%s provider=%s stream=%d passthrough=%d body_len=%zu",
-        client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, passthrough ? 1 : 0, req_body_len);
+        client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, (int)passthrough, req_body_len);
     if (body) {
         rt_print_json("[REQ]", body);
     } else if (upstream_body) {
@@ -382,7 +383,7 @@ static void handle_messages(struct evhttp_request *req) {
     }
 
     log_msg("INFO", "SEND model=%s upstream_model=%s provider=%s stream=%d passthrough=%d url=%s upstream_body_len=%zu",
-        job->client_model, job->upstream_model, job->provider_name, stream ? 1 : 0, passthrough ? 1 : 0, job->upstream_url, req_body_len);
+        job->client_model, job->upstream_model, job->provider_name, stream ? 1 : 0, (int)passthrough, job->upstream_url, req_body_len);
     if (upstream_body) {
         size_t ol = strlen(upstream_body);
         if (ol > 4096) ol = 4096;
@@ -397,6 +398,110 @@ static void handle_messages(struct evhttp_request *req) {
     if (oai) cJSON_Delete(oai);
     cJSON_Delete(model);
     cJSON_Delete(anth);
+    free(body);
+}
+
+/**
+ * @brief OpenAI Chat Completions 透传接口（/v1/chat/completions）
+ * @param req HTTP 请求对象
+ *
+ * 客户端按 OpenAI 标准发请求，gateway 不做协议转换、原样转发到上游
+ * OpenAI 兼容服务，仅记录监控（usage / 缓存 / 延迟）。
+ *
+ * 处理流程与 handle_messages 类似，差异点：
+ *   - 不读取 model 配置中的 api_mode，无条件按 OpenAI 透传处理；
+ *   - 上游 URL 使用 make_upstream_url（base_url + /chat/completions）；
+ *   - 替换请求体中的 model 字段为 upstream_model 后转发；
+ *   - prompt_tokens_includes_cache 默认 true（与 OpenAI 协议惯例一致）。
+ */
+static void handle_chat_completions(struct evhttp_request *req) {
+    if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) {
+        log_msg("WARN", "chat/completions non-POST method");
+        send_error_json(req, 405, "method_not_allowed", "POST required");
+        return;
+    }
+    if (!gateway_auth_ok(req)) {
+        log_msg("WARN", "chat/completions auth failed");
+        send_error_json(req, 401, "authentication_error", "invalid gateway api key");
+        return;
+    }
+    char *body = read_request_body(req, MAX_BODY_BYTES);
+    if (!body) { log_msg("WARN", "chat/completions body too large"); send_error_json(req, 413, "request_too_large", "request body too large"); return; }
+    cJSON *oai_req = cJSON_Parse(body);
+    if (!oai_req) { log_msg("WARN", "chat/completions invalid JSON body"); free(body); send_error_json(req, 400, "invalid_request_error", "invalid JSON"); return; }
+    const char *requested_model = json_get_str(oai_req, "model");
+    cJSON *model = config_select_model_copy(requested_model);
+    if (!model) {
+        log_msg("WARN", "no enabled model found for requested_model=%s", requested_model ? requested_model : "(null)");
+        cJSON_Delete(oai_req); free(body); send_error_json(req, 503, "configuration_error", "no enabled model configured"); return;
+    }
+    /* OpenAI 透传：替换 model 为 upstream_model 后直接转发 */
+    const char *um = json_get_str(model, "upstream_model");
+    if (um && *um) {
+        cJSON_ReplaceItemInObjectCaseSensitive(oai_req, "model", cJSON_CreateString(um));
+    }
+    char *upstream_body = cJSON_PrintUnformatted(oai_req);
+    char *url = make_upstream_url(model);
+    bool stream = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(oai_req, "stream"));
+    const char *client_model = requested_model && *requested_model ? requested_model : json_get_str(model, "id");
+    const char *upstream_model = json_get_str(model, "upstream_model");
+    const char *api_key = json_get_str(model, "api_key");
+    const char *provider = json_get_str(model, "provider");
+
+    log_msg("INFO", "RECV model=%s body_len=%zu stream=%d passthrough=%d (openai)",
+        client_model, body ? strlen(body) : 0, stream ? 1 : 0, (int)PT_OPENAI);
+    {
+        size_t bl = body ? strlen(body) : 0;
+        if (bl > 4096) bl = 4096;
+        if (body) log_msg("DEBUG", "REQ_BODY %.*s", (int)bl, body);
+    }
+
+    gateway_job_t *job = (gateway_job_t *)calloc(1, sizeof(*job));
+    membuf_init(&job->upstream_body);
+    pthread_mutex_init(&job->send_mu, NULL);
+    job->client_req = req;
+    job->request_body = upstream_body;
+    job->upstream_url = url;
+    job->api_key = xstrdup(api_key ? api_key : "");
+    job->user_agent = xstrdup(header_get(req, "User-Agent"));
+    job->provider_name = xstrdup(provider ? provider : "openai-compatible");
+    job->client_model = xstrdup(client_model ? client_model : "openai-passthrough");
+    job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
+    job->stream = stream;
+    job->passthrough = PT_OPENAI;
+    /* OpenAI 协议惯例：prompt_tokens 已包含缓存 tokens，可被模型配置覆盖 */
+    job->prompt_tokens_includes_cache = config_get_prompt_tokens_includes_cache(model, true);
+    job->stream_state.client_model = xstrdup(job->client_model);
+    job->stream_state.prompt_tokens = 0;
+    clock_gettime(CLOCK_MONOTONIC, &job->start_time);
+    size_t req_body_len = upstream_body ? strlen(upstream_body) : 0;
+    stats_request_begin(job->upstream_model, job->provider_name, stream, req_body_len);
+    evhttp_request_own(req);
+    enqueue_job(job);
+
+    rt_print("[REQ] model=%s provider=%s stream=%d passthrough=%d body_len=%zu (openai)",
+        client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, (int)PT_OPENAI, req_body_len);
+    if (body) {
+        rt_print_json("[REQ]", body);
+    } else if (upstream_body) {
+        rt_print_json("[REQ]", upstream_body);
+    }
+
+    log_msg("INFO", "SEND model=%s upstream_model=%s provider=%s stream=%d passthrough=%d url=%s upstream_body_len=%zu",
+        job->client_model, job->upstream_model, job->provider_name, stream ? 1 : 0, (int)PT_OPENAI, job->upstream_url, req_body_len);
+    if (upstream_body) {
+        size_t ol = strlen(upstream_body);
+        if (ol > 4096) ol = 4096;
+        log_msg("DEBUG", "UP_REQ %.*s", (int)ol, upstream_body);
+        if (rt_get_mode() == RT_TXT) {
+            rt_print("[UP_REQ] model=%s upstream_body_len=%zu\n%s", client_model, strlen(upstream_body), upstream_body);
+        } else {
+            rt_print("[UP_REQ] model=%s upstream_body_len=%zu", client_model, strlen(upstream_body));
+            rt_print_json("[UP_REQ]", upstream_body);
+        }
+    }
+    cJSON_Delete(model);
+    cJSON_Delete(oai_req);
     free(body);
 }
 
@@ -842,6 +947,7 @@ static void handle_admin_html(struct evhttp_request *req) {
  *   - /admin、/admin/                -> handle_admin_html
  *   - /healthz、/readyz              -> handle_health
  *   - /v1/messages                   -> handle_messages
+ *   - /v1/chat/completions           -> handle_chat_completions (OpenAI 透传，仅监控)
  *   - /v1/messages/count_tokens      -> handle_count_tokens
  *   - /v1/models、/v1/models/        -> handle_models
  *   - /admin/api/config (GET)        -> handle_config_get
@@ -863,6 +969,7 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/admin") || URI_IS("/admin/")) { handle_admin_html(req); return; }
     if (URI_IS("/healthz") || URI_IS("/readyz")) { handle_health(req); return; }
     if (URI_IS("/v1/messages")) { handle_messages(req); return; }
+    if (URI_IS("/v1/chat/completions")) { handle_chat_completions(req); return; }
     if (URI_IS("/v1/messages/count_tokens")) { handle_count_tokens(req); return; }
     if (URI_IS("/v1/models") || URI_IS("/v1/models/")) { handle_models(req); return; }
     if (URI_IS("/admin/api/login") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_admin_login(req); return; }

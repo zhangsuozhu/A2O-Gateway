@@ -389,7 +389,7 @@ void stream_emit_error(gateway_job_t *job, const char *message) {
 void stream_finish(gateway_job_t *job) {
     stream_state_t *s = &job->stream_state;
     if (s->ended) return;
-    if (job->passthrough) {
+    if (job->passthrough != PT_NONE) {
         /* 透传模式：上游已原样转发所有事件，不再额外发送结束事件 */
         pthread_mutex_lock(&job->send_mu);
         job->send_end = true;
@@ -397,8 +397,8 @@ void stream_finish(gateway_job_t *job) {
         event_base_once(BASE, -1, EV_TIMEOUT, deferred_send, job, NULL);
         job->response_sent = true;
         s->ended = true;
-        rt_print("[RES] model=%s type=stream(passthrough) upstream_status=%ld prompt_tokens=%ld completion_tokens=%ld",
-            job->client_model, job->upstream_status, s->prompt_tokens, s->completion_tokens);
+        rt_print("[RES] model=%s type=stream(passthrough=%d) upstream_status=%ld prompt_tokens=%ld completion_tokens=%ld",
+            job->client_model, (int)job->passthrough, job->upstream_status, s->prompt_tokens, s->completion_tokens);
         return;
     }
     stream_start_reply(job);
@@ -589,57 +589,75 @@ static void stream_flush_thinking(gateway_job_t *job) {
  * 参数：
  *   json - OpenAI API 返回的单行 JSON 字符串
  */
+/* 从一个已解析的 OpenAI 流式响应 cJSON 对象中提取 usage 与缓存 token，
+ * 更新 job 的统计字段并写入 stats 系统。
+ * 既被 handle_openai_stream_json（协议转换路径）使用，
+ * 也被 extract_openai_usage_only（OpenAI 透传路径）使用，
+ * 后者无需触发任何 Anthropic SSE 事件。 */
+static void extract_openai_usage_from_obj(gateway_job_t *job, cJSON *root) {
+    cJSON *usage = cJSON_GetObjectItemCaseSensitive(root, "usage");
+    if (!cJSON_IsObject(usage)) return;
+    long pt = json_get_long(usage, "prompt_tokens", -1);
+    long ct = json_get_long(usage, "completion_tokens", -1);
+    /* 提示词缓存：跨 provider 字段名兼容
+     * Anthropic: cache_read_input_tokens, cache_creation_input_tokens
+     * DeepSeek:  prompt_cache_hit_tokens
+     * OpenAI/Moonshot: usage.prompt_tokens_details.cached_tokens
+     * 注意：prompt_cache_miss_tokens 是 prompt_tokens 的子集（未命中部分），
+     * 不是 cache_creation，不应映射到 cache_creation_input_tokens */
+    long cache_read = 0, cache_creation = 0;
+    cache_read = json_get_long(usage, "cache_read_input_tokens", 0);
+    if (cache_read == 0) cache_read = json_get_long(usage, "prompt_cache_hit_tokens", 0);
+    if (cache_read == 0) {
+        cJSON *details = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
+        if (cJSON_IsObject(details)) {
+            cache_read = json_get_long(details, "cached_tokens", 0);
+        }
+    }
+    cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
+    /* provider 的 prompt_tokens 不包含缓存 tokens，需合并 */
+    log_msg("DEBUG", "STREAM_CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
+            job->client_model, job->prompt_tokens_includes_cache ? "true" : "false", pt, cache_read, cache_creation);
+    if (!job->prompt_tokens_includes_cache && pt > 0) {
+        pt = pt + cache_read + cache_creation;
+        log_msg("DEBUG", "STREAM_CACHE_FIX model=%s pt_after=%ld", job->client_model, pt);
+    }
+    if (pt >= 0) {
+        job->stream_state.prompt_tokens = pt;
+        log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=%ld", job->client_model, pt);
+    }
+    if (ct >= 0) {
+        job->stream_state.completion_tokens = ct;
+        log_msg("DEBUG", "STREAM_USAGE model=%s completion_tokens=%ld", job->client_model, ct);
+    }
+    job->stream_state.cache_read_input_tokens = cache_read;
+    job->stream_state.cache_creation_input_tokens = cache_creation;
+    if (cache_read > 0 || cache_creation > 0) {
+        const char *m = job->upstream_model ? job->upstream_model : job->client_model;
+        const char *p = job->provider_name ? job->provider_name : "unknown";
+        if (cache_read > 0)
+            stats_record_cache_read(m, p, (unsigned long)cache_read);
+        if (cache_creation > 0)
+            stats_record_cache_creation(m, p, (unsigned long)cache_creation);
+        log_msg("DEBUG", "STREAM_CACHE model=%s cache_read=%ld cache_creation=%ld",
+                job->client_model, cache_read, cache_creation);
+    }
+}
+
+/* OpenAI 透传模式专用：仅从一条流式 JSON 中提取 usage 用于监控，
+ * 不触发任何 Anthropic SSE 事件。所有字节已经在 stream_parse_append
+ * 中原样转发给客户端。 */
+static void extract_openai_usage_only(gateway_job_t *job, const char *json) {
+    cJSON *root = cJSON_Parse(json);
+    if (!root) return;
+    extract_openai_usage_from_obj(job, root);
+    cJSON_Delete(root);
+}
+
 void handle_openai_stream_json(gateway_job_t *job, const char *json) {
     cJSON *root = cJSON_Parse(json);
     if (!root) return;
-    cJSON *usage = cJSON_GetObjectItemCaseSensitive(root, "usage");
-    if (cJSON_IsObject(usage)) {
-        long pt = json_get_long(usage, "prompt_tokens", -1);
-        long ct = json_get_long(usage, "completion_tokens", -1);
-        /* 提示词缓存：跨 provider 字段名兼容
-         * Anthropic: cache_read_input_tokens, cache_creation_input_tokens
-         * DeepSeek:  prompt_cache_hit_tokens
-         * OpenAI/Moonshot: usage.prompt_tokens_details.cached_tokens
-         * 注意：prompt_cache_miss_tokens 是 prompt_tokens 的子集（未命中部分），
-         * 不是 cache_creation，不应映射到 cache_creation_input_tokens */
-        long cache_read = 0, cache_creation = 0;
-        cache_read = json_get_long(usage, "cache_read_input_tokens", 0);
-        if (cache_read == 0) cache_read = json_get_long(usage, "prompt_cache_hit_tokens", 0);
-        if (cache_read == 0) {
-            cJSON *details = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
-            if (cJSON_IsObject(details)) {
-                cache_read = json_get_long(details, "cached_tokens", 0);
-            }
-        }
-        cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
-        /* provider 的 prompt_tokens 不包含缓存 tokens，需合并 */
-        log_msg("DEBUG", "STREAM_CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
-                job->client_model, job->prompt_tokens_includes_cache ? "true" : "false", pt, cache_read, cache_creation);
-        if (!job->prompt_tokens_includes_cache && pt > 0) {
-            pt = pt + cache_read + cache_creation;
-            log_msg("DEBUG", "STREAM_CACHE_FIX model=%s pt_after=%ld", job->client_model, pt);
-        }
-        if (pt >= 0) {
-            job->stream_state.prompt_tokens = pt;
-            log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=%ld", job->client_model, pt);
-        }
-        if (ct >= 0) {
-            job->stream_state.completion_tokens = ct;
-            log_msg("DEBUG", "STREAM_USAGE model=%s completion_tokens=%ld", job->client_model, ct);
-        }
-        job->stream_state.cache_read_input_tokens = cache_read;
-        job->stream_state.cache_creation_input_tokens = cache_creation;
-        if (cache_read > 0 || cache_creation > 0) {
-            const char *m = job->upstream_model ? job->upstream_model : job->client_model;
-            const char *p = job->provider_name ? job->provider_name : "unknown";
-            if (cache_read > 0)
-                stats_record_cache_read(m, p, (unsigned long)cache_read);
-            if (cache_creation > 0)
-                stats_record_cache_creation(m, p, (unsigned long)cache_creation);
-            log_msg("DEBUG", "STREAM_CACHE model=%s cache_read=%ld cache_creation=%ld",
-                    job->client_model, cache_read, cache_creation);
-        }
-    }
+    extract_openai_usage_from_obj(job, root);
     cJSON *choices = cJSON_GetObjectItemCaseSensitive(root, "choices");
     cJSON *ch = cJSON_IsArray(choices) ? cJSON_GetArrayItem(choices, 0) : NULL;
     if (!ch) { cJSON_Delete(root); return; }
@@ -837,46 +855,126 @@ void process_sse_line(gateway_job_t *job, char *line) {
         stream_finish(job);
         return;
     }
-    if (job->passthrough) {
-        extract_anthropic_usage(job, data);
-    } else {
-        handle_openai_stream_json(job, data);
+    switch (job->passthrough) {
+        case PT_ANTHROPIC:
+            extract_anthropic_usage(job, data);
+            break;
+        case PT_OPENAI:
+            extract_openai_usage_only(job, data);
+            break;
+        case PT_NONE:
+        default:
+            handle_openai_stream_json(job, data);
+            break;
     }
 }
 
+/* SSE 透传模式：对单行 SSE 数据按需覆盖 / 注入 model 字段。
+ *
+ * 返回值：
+ *   - 非 NULL：新分配的 "data: {modified_json}\n" 行（由调用方 free）
+ *   - NULL：当前行无需修改（调用方原样转发 line）
+ *
+ * 适用：
+ *   - PT_ANTHROPIC：仅当 data 是 message_start 事件时，覆盖 data.message.model
+ *   - PT_OPENAI：每个非 [DONE] data chunk 覆盖顶层 .model
+ *
+ * 非 data 行（event: / id: / retry: / 空行）原样透传，返回 NULL。 */
+static char *passthrough_anthropic_sse_override(const char *line, const char *gateway_model) {
+    while (*line == ' ' || *line == '\t' || *line == '\r') line++;
+    if (strncmp(line, "data:", 5) != 0) return NULL;
+    const char *data = line + 5;
+    while (*data == ' ') data++;
+    if (*data == 0) return NULL;
+
+    cJSON *root = cJSON_Parse(data);
+    if (!root) return NULL;
+
+    cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
+    cJSON *msg = cJSON_GetObjectItemCaseSensitive(root, "message");
+    if (!cJSON_IsString(type) || !cJSON_IsObject(msg) ||
+        strcmp(type->valuestring, "message_start") != 0) {
+        cJSON_Delete(root);
+        return NULL;
+    }
+
+    cJSON *model = cJSON_GetObjectItemCaseSensitive(msg, "model");
+    if (cJSON_IsString(model) && model->valuestring && model->valuestring[0]) {
+        cJSON_ReplaceItemInObjectCaseSensitive(msg, "model", cJSON_CreateString(gateway_model));
+    } else {
+        cJSON_DeleteItemFromObjectCaseSensitive(msg, "model");
+        cJSON_AddStringToObject(msg, "model", gateway_model);
+    }
+
+    char *new_data = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!new_data) return NULL;
+
+    size_t need = strlen("data: ") + strlen(new_data) + strlen("\n") + 1;
+    char *out = (char *)malloc(need);
+    if (!out) { free(new_data); return NULL; }
+    snprintf(out, need, "data: %s\n", new_data);
+    free(new_data);
+    return out;
+}
+
+static char *passthrough_openai_sse_override(const char *line, const char *gateway_model) {
+    while (*line == ' ' || *line == '\t' || *line == '\r') line++;
+    if (strncmp(line, "data:", 5) != 0) return NULL;
+    const char *data = line + 5;
+    while (*data == ' ') data++;
+    if (*data == 0) return NULL;
+    /* [DONE] 哨兵：原样透传 */
+    if (strcmp(data, "[DONE]") == 0) return NULL;
+
+    cJSON *root = cJSON_Parse(data);
+    if (!root) return NULL;
+
+    cJSON *model = cJSON_GetObjectItemCaseSensitive(root, "model");
+    if (cJSON_IsString(model) && model->valuestring && model->valuestring[0]) {
+        cJSON_ReplaceItemInObjectCaseSensitive(root, "model", cJSON_CreateString(gateway_model));
+    } else {
+        cJSON_DeleteItemFromObjectCaseSensitive(root, "model");
+        cJSON_AddStringToObject(root, "model", gateway_model);
+    }
+
+    char *new_data = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!new_data) return NULL;
+
+    size_t need = strlen("data: ") + strlen(new_data) + strlen("\n") + 1;
+    char *out = (char *)malloc(need);
+    if (!out) { free(new_data); return NULL; }
+    snprintf(out, need, "data: %s\n", new_data);
+    free(new_data);
+    return out;
+}
+
 /* 追加数据到 SSE 解析缓冲区并处理
- * 
+ *
  * 功能：将接收到的原始数据追加到行缓冲区，按行分割处理
- * 
+ *
  * 缓冲区管理：
  * - 动态扩容 linebuf（初始 8192 字节，按需 2 倍扩容）
  * - 确保容量足以容纳新数据 + 结尾 \0
- * 
+ *
  * 行分割处理：
  * 1. 将新数据追加到 linebuf 末尾
  * 2. 查找换行符 \n
  * 3. 对每个完整行：
+ *    - 透传模式：按需覆盖 / 注入 model 字段后转发
+ *    - 转换模式（PT_NONE）：交由 handle_openai_stream_json 等 emit 函数
  *    - 替换 \n 为 \0（C 字符串结尾）
  *    - 调用 process_sse_line 处理
  *    - 如果流已结束，提前返回
  * 4. 将剩余的不完整行移到缓冲区开头
  * 5. 更新 linebuf_len
- * 
+ *
  * 这种设计可以处理跨多个数据包的不完整行
  */
 void stream_parse_append(gateway_job_t *job, const char *ptr, size_t n) {
     stream_state_t *s = &job->stream_state;
     if (s->ended) return;
-    /* 透传模式：先原样转发上游 SSE 数据，同时继续累积到 linebuf 解析 usage */
-    if (job->passthrough) {
-        char *raw = (char *)malloc(n + 1);
-        if (raw) {
-            memcpy(raw, ptr, n);
-            raw[n] = 0;
-            stream_send_chunk(job, raw);
-            free(raw);
-        }
-    }
     if (s->linebuf_len + n + 1 > s->linebuf_cap) {
         size_t nc = s->linebuf_cap ? s->linebuf_cap * 2 : 8192;
         while (nc < s->linebuf_len + n + 1) nc *= 2;
@@ -893,6 +991,22 @@ void stream_parse_append(gateway_job_t *job, const char *ptr, size_t n) {
     char *nl;
     while ((nl = strchr(start, '\n')) != NULL) {
         *nl = 0;
+        /* 透传模式：按需覆盖 / 注入 model 字段后按行转发 */
+        if (job->passthrough != PT_NONE) {
+            char *out_line = NULL;
+            if (job->passthrough == PT_ANTHROPIC) {
+                out_line = passthrough_anthropic_sse_override(start, job->client_model);
+            } else if (job->passthrough == PT_OPENAI) {
+                out_line = passthrough_openai_sse_override(start, job->client_model);
+            }
+            if (out_line) {
+                stream_send_chunk(job, out_line);
+                free(out_line);
+            } else {
+                /* 透传 + 非目标行（event: / id: / retry: / 空行）：原样转发 */
+                stream_send_chunk(job, start);
+            }
+        }
         process_sse_line(job, start);
         if (s->ended) return;
         start = nl + 1;
