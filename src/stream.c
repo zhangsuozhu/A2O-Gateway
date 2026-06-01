@@ -713,6 +713,28 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
  * - message_delta 事件：直接出现在 usage 字段中
  * - message_stop 事件：直接出现在 usage 字段中
  */
+static void extract_anthropic_cache_stats(gateway_job_t *job, cJSON *usage) {
+    if (job->stream_state.cache_stats_recorded) return;
+    long cr = json_get_long(usage, "cache_read_input_tokens", 0);
+    if (cr == 0) cr = json_get_long(usage, "prompt_cache_hit_tokens", 0);
+    if (cr == 0) {
+        cJSON *d = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
+        if (cJSON_IsObject(d)) {
+            cr = json_get_long(d, "cached_tokens", 0);
+        }
+    }
+    long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
+    if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
+    const char *m = job->upstream_model ? job->upstream_model : job->client_model;
+    const char *p = job->provider_name ? job->provider_name : "unknown";
+    if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
+    if (cc > 0) stats_record_cache_creation(m, p, (unsigned long)cc);
+    if (cr > 0 || cc > 0) {
+        job->stream_state.cache_stats_recorded = true;
+        log_msg("DEBUG", "ANTH_CACHE model=%s cache_read=%ld cache_create=%ld", job->client_model, cr, cc);
+    }
+}
+
 static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
     cJSON *root = cJSON_Parse(json);
     if (!root) return;
@@ -731,6 +753,7 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
             job->stream_state.completion_tokens = out_tok;
             log_msg("DEBUG", "ANTH_USAGE model=%s output_tokens=%ld", job->client_model, out_tok);
         }
+        extract_anthropic_cache_stats(job, usage);
     }
     /* message_start 事件的 usage 嵌套在 message 对象内 */
     cJSON *msg = cJSON_GetObjectItemCaseSensitive(root, "message");
@@ -750,6 +773,7 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
                 job->stream_state.completion_tokens = out_tok;
                 log_msg("DEBUG", "ANTH_USAGE model=%s msg.output_tokens=%ld", job->client_model, out_tok);
             }
+            extract_anthropic_cache_stats(job, msg_usage);
         }
     }
     cJSON_Delete(root);

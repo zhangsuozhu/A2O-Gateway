@@ -210,6 +210,7 @@ typedef struct stream_state {
 
     /* 统计防重入标志 */
     bool stats_recorded;     /**< 标记 stats_request_end 是否已调用 */
+    bool cache_stats_recorded; /**< 标记透传流式缓存统计是否已调用 */
 } stream_state_t;
 
 /* 前向声明：避免 worker 和 gateway_job 之间的循环引用 */
