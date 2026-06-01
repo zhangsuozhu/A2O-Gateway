@@ -360,6 +360,23 @@ static const char *CREATE_TABLES_SQL =
     "    PRIMARY KEY (day, model, provider)"
     ");"
 
+    "CREATE TABLE IF NOT EXISTS error_logs ("
+    "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "    timestamp INTEGER NOT NULL,"
+    "    model TEXT NOT NULL,"
+    "    provider TEXT NOT NULL,"
+    "    http_status INTEGER,"
+    "    curl_code INTEGER,"
+    "    error_message TEXT,"
+    "    request_body TEXT,"
+    "    response_body TEXT,"
+    "    latency_ms REAL,"
+    "    upstream_url TEXT,"
+    "    client_model TEXT"
+    ");"
+    "CREATE INDEX IF NOT EXISTS idx_err_time ON error_logs(timestamp);"
+    "CREATE INDEX IF NOT EXISTS idx_err_model ON error_logs(model);"
+
     "CREATE TABLE IF NOT EXISTS model_stats ("
     "    model TEXT NOT NULL PRIMARY KEY,"
     "    provider TEXT NOT NULL,"
@@ -783,6 +800,149 @@ cJSON *db_query_daily(const char *model, const char *from_day, const char *to_da
     }
     sqlite3_finalize(stmt);
     return arr;
+}
+
+/* ====================================================================
+ * 错误日志（同步写入，含完整请求/响应体）
+ * ==================================================================== */
+
+bool db_insert_error_log(const char *model, const char *provider,
+                          int http_status, int curl_code,
+                          const char *error_message,
+                          const char *request_body, const char *response_body,
+                          double latency_ms, const char *upstream_url,
+                          const char *client_model)
+{
+    if (!g_db) return false;
+
+    const char *sql = "INSERT INTO error_logs"
+        " (timestamp, model, provider, http_status, curl_code, error_message,"
+        " request_body, response_body, latency_ms, upstream_url, client_model)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        log_msg("ERROR", "db_insert_error_log prepare: %s", sqlite3_errmsg(g_db));
+        return false;
+    }
+
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)time(NULL));
+    sqlite3_bind_text(stmt, 2, model ? model : "", -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, provider ? provider : "", -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 4, http_status);
+    sqlite3_bind_int(stmt, 5, curl_code);
+    sqlite3_bind_text(stmt, 6, error_message ? error_message : "", -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 7, request_body ? request_body : "", -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 8, response_body ? response_body : "", -1, SQLITE_STATIC);
+    sqlite3_bind_double(stmt, 9, latency_ms);
+    sqlite3_bind_text(stmt, 10, upstream_url ? upstream_url : "", -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 11, client_model ? client_model : "", -1, SQLITE_STATIC);
+
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        log_msg("ERROR", "db_insert_error_log step: %s", sqlite3_errmsg(g_db));
+        return false;
+    }
+    return true;
+}
+
+cJSON *db_query_error_logs(const char *model, time_t from, time_t to, int limit, int offset)
+{
+    if (!g_db) {
+        cJSON *out = cJSON_CreateObject();
+        cJSON_AddNumberToObject(out, "total", 0);
+        cJSON_AddItemToObject(out, "data", cJSON_CreateArray());
+        return out;
+    }
+
+    char where[512] = "";
+    int wc = 0;
+    if (model && *model) {
+        snprintf(where + strlen(where), sizeof(where) - strlen(where), " WHERE model = ?");
+        wc++;
+    }
+    if (from > 0) {
+        snprintf(where + strlen(where), sizeof(where) - strlen(where),
+                 wc ? " AND timestamp >= ?" : " WHERE timestamp >= ?");
+        wc++;
+    }
+    if (to > 0) {
+        snprintf(where + strlen(where), sizeof(where) - strlen(where),
+                 wc ? " AND timestamp <= ?" : " WHERE timestamp <= ?");
+        wc++;
+    }
+
+    /* COUNT 总数 */
+    char count_sql[1024];
+    snprintf(count_sql, sizeof(count_sql), "SELECT COUNT(*) FROM error_logs%s;", where);
+    sqlite3_stmt *count_stmt = NULL;
+    int total = 0;
+    if (sqlite3_prepare_v2(g_db, count_sql, -1, &count_stmt, NULL) == SQLITE_OK) {
+        int cidx = 1;
+        if (model && *model) sqlite3_bind_text(count_stmt, cidx++, model, -1, SQLITE_STATIC);
+        if (from > 0) sqlite3_bind_int64(count_stmt, cidx++, (sqlite3_int64)from);
+        if (to > 0) sqlite3_bind_int64(count_stmt, cidx++, (sqlite3_int64)to);
+        if (sqlite3_step(count_stmt) == SQLITE_ROW) {
+            total = sqlite3_column_int(count_stmt, 0);
+        }
+        sqlite3_finalize(count_stmt);
+    }
+
+    char sql[2048];
+    snprintf(sql, sizeof(sql),
+             "SELECT timestamp, model, provider, http_status, curl_code, error_message,"
+             " request_body, response_body, latency_ms, upstream_url, client_model"
+             " FROM error_logs%s ORDER BY timestamp DESC LIMIT ? OFFSET ?;",
+             where);
+
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        log_msg("ERROR", "db_query_error_logs prepare: %s", sqlite3_errmsg(g_db));
+        cJSON *out = cJSON_CreateObject();
+        cJSON_AddNumberToObject(out, "total", 0);
+        cJSON_AddNumberToObject(out, "limit", limit > 0 ? limit : 100);
+        cJSON_AddNumberToObject(out, "offset", offset > 0 ? offset : 0);
+        cJSON_AddItemToObject(out, "data", cJSON_CreateArray());
+        return out;
+    }
+
+    int idx = 1;
+    if (model && *model) sqlite3_bind_text(stmt, idx++, model, -1, SQLITE_STATIC);
+    if (from > 0) sqlite3_bind_int64(stmt, idx++, (sqlite3_int64)from);
+    if (to > 0) sqlite3_bind_int64(stmt, idx++, (sqlite3_int64)to);
+    sqlite3_bind_int(stmt, idx++, limit > 0 ? limit : 100);
+    sqlite3_bind_int(stmt, idx++, offset > 0 ? offset : 0);
+
+    cJSON *arr = cJSON_CreateArray();
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddNumberToObject(obj, "timestamp", (double)sqlite3_column_int64(stmt, 0));
+        cJSON_AddStringToObject(obj, "model", (const char *)sqlite3_column_text(stmt, 1));
+        cJSON_AddStringToObject(obj, "provider", (const char *)sqlite3_column_text(stmt, 2));
+        cJSON_AddNumberToObject(obj, "http_status", sqlite3_column_int(stmt, 3));
+        cJSON_AddNumberToObject(obj, "curl_code", sqlite3_column_int(stmt, 4));
+        const char *err_msg = (const char *)sqlite3_column_text(stmt, 5);
+        if (err_msg) cJSON_AddStringToObject(obj, "error_message", err_msg);
+        const char *req_body = (const char *)sqlite3_column_text(stmt, 6);
+        if (req_body) cJSON_AddStringToObject(obj, "request_body", req_body);
+        const char *resp_body = (const char *)sqlite3_column_text(stmt, 7);
+        if (resp_body) cJSON_AddStringToObject(obj, "response_body", resp_body);
+        cJSON_AddNumberToObject(obj, "latency_ms", sqlite3_column_double(stmt, 8));
+        const char *url = (const char *)sqlite3_column_text(stmt, 9);
+        if (url) cJSON_AddStringToObject(obj, "upstream_url", url);
+        const char *cm = (const char *)sqlite3_column_text(stmt, 10);
+        if (cm) cJSON_AddStringToObject(obj, "client_model", cm);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    sqlite3_finalize(stmt);
+
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddNumberToObject(out, "total", total);
+    cJSON_AddNumberToObject(out, "limit", limit > 0 ? limit : 100);
+    cJSON_AddNumberToObject(out, "offset", offset > 0 ? offset : 0);
+    cJSON_AddItemToObject(out, "data", arr);
+    return out;
 }
 
 bool db_cleanup_old_data(int request_retention_days, int hourly_retention_days)

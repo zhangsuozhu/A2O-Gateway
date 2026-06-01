@@ -357,7 +357,6 @@ static void handle_messages(struct evhttp_request *req) {
     job->request_body = upstream_body;
     job->upstream_url = url;
     job->api_key = xstrdup(api_key ? api_key : "");
-    job->user_agent = xstrdup(header_get(req, "User-Agent"));
     job->provider_name = xstrdup(provider ? provider : "openai-compatible");
     job->client_model = xstrdup(client_model ? client_model : "claude-code-gateway");
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
@@ -463,7 +462,6 @@ static void handle_chat_completions(struct evhttp_request *req) {
     job->request_body = upstream_body;
     job->upstream_url = url;
     job->api_key = xstrdup(api_key ? api_key : "");
-    job->user_agent = xstrdup(header_get(req, "User-Agent"));
     job->provider_name = xstrdup(provider ? provider : "openai-compatible");
     job->client_model = xstrdup(client_model ? client_model : "openai-passthrough");
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
@@ -896,6 +894,43 @@ static void handle_debug(struct evhttp_request *req) {
 }
 
 /**
+ * @brief 错误日志查询（/admin/api/error_logs GET）
+ *
+ * 查询参数同 history：model, from, to, limit, offset
+ * 返回包含完整请求体/响应体的错误日志
+ */
+static void handle_error_logs(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    const char *uri = evhttp_request_get_uri(req);
+    char buf_model[128] = {0};
+    char buf_from[32] = {0};
+    char buf_to[32] = {0};
+    char buf_limit[16] = {0};
+    char buf_offset[16] = {0};
+    const char *model = query_get(uri, "model", buf_model, sizeof(buf_model));
+    const char *from_s = query_get(uri, "from", buf_from, sizeof(buf_from));
+    const char *to_s = query_get(uri, "to", buf_to, sizeof(buf_to));
+    const char *limit_s = query_get(uri, "limit", buf_limit, sizeof(buf_limit));
+    const char *offset_s = query_get(uri, "offset", buf_offset, sizeof(buf_offset));
+
+    time_t from_t = from_s ? (time_t)atoll(from_s) : 0;
+    time_t to_t = to_s ? (time_t)atoll(to_s) : 0;
+    int limit = limit_s ? atoi(limit_s) : 100;
+    int offset = offset_s ? atoi(offset_s) : 0;
+
+    cJSON *result = db_query_error_logs(model && *model ? model : NULL, from_t, to_t, limit, offset);
+    char *json = cJSON_PrintUnformatted(result);
+    cJSON_Delete(result);
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add_printf(out, "%s", json ? json : "{}");
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "application/json; charset=utf-8");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+    free(json);
+}
+
+/**
  * @brief 返回管理后台 HTML 页面
  * @param req HTTP 请求对象
  *
@@ -984,6 +1019,7 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/admin/api/hourly") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_hourly(req); return; }
     if (URI_IS("/admin/api/daily") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_daily(req); return; }
     if (URI_IS("/admin/api/debug") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_debug(req); return; }
+    if (URI_IS("/admin/api/error_logs") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_error_logs(req); return; }
 #undef URI_IS
     send_error_json(req, 404, "not_found", "not found");
 }

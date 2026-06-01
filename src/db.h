@@ -55,6 +55,17 @@ bool db_update_model_stats(const char *model, const char *provider,
  */
 cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, int offset);
 
+/* 写入错误日志（同步写入，含完整请求/响应体） */
+bool db_insert_error_log(const char *model, const char *provider,
+                          int http_status, int curl_code,
+                          const char *error_message,
+                          const char *request_body, const char *response_body,
+                          double latency_ms, const char *upstream_url,
+                          const char *client_model);
+
+/* 查询错误日志 */
+cJSON *db_query_error_logs(const char *model, time_t from, time_t to, int limit, int offset);
+
 /* 查询小时聚合统计 */
 cJSON *db_query_hourly(const char *model, const char *from_hour, const char *to_hour);
 

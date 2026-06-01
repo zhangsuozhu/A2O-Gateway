@@ -10,6 +10,10 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBEVENT REQUIRED libevent libevent_pthreads)
 pkg_check_modules(LIBCURL REQUIRED libcurl)
 pkg_check_modules(CJSON REQUIRED libcjson)
+# cjson pkg-config 在某些 cmake 版本下 include 路径解析不正确，手动兜底
+if(NOT EXISTS "${CJSON_INCLUDE_DIRS}/cJSON.h")
+    find_path(CJSON_INCLUDE_DIRS cJSON.h /usr/include/cjson /usr/local/include/cjson)
+endif()
 
 set(GATEWAY_SOURCES
     src/main.c

@@ -138,6 +138,7 @@
     <button class="ghost sm tab-btn" id="tabRealtimeBtn" onclick="switchTab('realtime')">🔴 实时</button>
     <button class="ghost sm tab-btn" id="tabStatsBtn" onclick="switchTab('stats')">📊 统计</button>
     <button class="ghost sm tab-btn" id="tabHistoryBtn" onclick="switchTab('history')">📜 历史</button>
+    <button class="ghost sm tab-btn" id="tabErrorLogsBtn" onclick="switchTab('error_logs')">⚠️ 错误日志</button>
     <button class="ghost sm" id="envBtn" onclick="toggleEnv()" style="display:none">🔑 连接信息</button>
     <button class="green" id="saveBtn" onclick="save()" style="display:none">💾 保存</button>
     <button id="addBtn" onclick="showAddModal()" style="display:none">＋ 添加模型</button>
@@ -318,6 +319,29 @@
           <div style="flex:0.5"><button onclick="queryHistory()">🔍 查询</button></div>
         </div>
         <div id="historyResult">
+          <div class="stats-empty">选择查询条件后点击查询</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tabErrorLogsContent" style="display:none">
+      <div class="card">
+        <h2>⚠️ 错误日志（含完整请求/响应体）</h2>
+        <div class="row" style="margin-bottom:12px;align-items:flex-end">
+          <div style="flex:2"><label>模型</label><input id="errModel" placeholder="留空=全部" /></div>
+          <div><label>起始</label><input type="datetime-local" id="errFrom" /></div>
+          <div><label>结束</label><input type="datetime-local" id="errTo" /></div>
+          <div style="flex:0.7"><label>每页</label>
+            <select id="errLimit" onchange="onErrLimitChange()">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          <div style="flex:0.5"><button onclick="queryErrorLogs()">🔍 查询</button></div>
+        </div>
+        <div id="errorLogsResult">
           <div class="stats-empty">选择查询条件后点击查询</div>
         </div>
       </div>
@@ -873,10 +897,12 @@ function switchTab(tab) {
   $('tabRealtimeBtn').classList.toggle('active', tab === 'realtime');
   $('tabStatsBtn').classList.toggle('active', tab === 'stats');
   $('tabHistoryBtn').classList.toggle('active', tab === 'history');
+  $('tabErrorLogsBtn').classList.toggle('active', tab === 'error_logs');
   $('tabConfigContent').style.display = tab === 'config' ? '' : 'none';
   $('tabRealtimeContent').style.display = tab === 'realtime' ? '' : 'none';
   $('tabStatsContent').style.display = tab === 'stats' ? '' : 'none';
   $('tabHistoryContent').style.display = tab === 'history' ? '' : 'none';
+  $('tabErrorLogsContent').style.display = tab === 'error_logs' ? '' : 'none';
 
   var showConfigBtns = tab === 'config' && cfg;
   $('saveBtn').style.display = showConfigBtns ? '' : 'none';
@@ -1363,6 +1389,131 @@ function renderAggTable(data, timeKey, timeLabel) {
   });
   html += '</tbody></table></div>';
   $('historyResult').innerHTML = html;
+}
+
+// ── 错误日志 ──
+
+let errLimit = 20;
+let errOffset = 0;
+let errTotal = 0;
+
+function formatDateTimeFull(ts) {
+  var d = new Date(ts * 1000);
+  return d.toLocaleString('zh-CN');
+}
+
+async function queryErrorLogs(keepOffset) {
+  if (!keepOffset) errOffset = 0;
+  var model = $('errModel').value.trim();
+  var fromVal = $('errFrom').value;
+  var toVal = $('errTo').value;
+  var fromTs = fromVal ? Math.floor(new Date(fromVal).getTime() / 1000) : 0;
+  var toTs = toVal ? Math.floor(new Date(toVal).getTime() / 1000) : 0;
+
+  var url = '/admin/api/error_logs';
+  var params = [];
+  if (model) params.push('model=' + encodeURIComponent(model));
+  if (fromTs) params.push('from=' + fromTs);
+  if (toTs) params.push('to=' + toTs);
+  params.push('limit=' + errLimit);
+  params.push('offset=' + errOffset);
+  if (params.length) url += '?' + params.join('&');
+
+  $('errorLogsResult').innerHTML = '<div class="loading">查询中...</div>';
+  try {
+    var r = await fetch(url, { headers: apiHeaders() });
+    if (!r.ok) { var t = await r.text(); $('errorLogsResult').innerHTML = '<div class="error-box">查询失败: ' + escHtml(t) + '</div>'; return; }
+    var data = await r.json();
+    renderErrorLogs(data);
+  } catch (e) {
+    $('errorLogsResult').innerHTML = '<div class="error-box">查询失败: ' + escHtml(e.message || String(e)) + '</div>';
+  }
+}
+
+function onErrLimitChange() {
+  errLimit = parseInt($('errLimit').value) || 20;
+  errOffset = 0;
+  queryErrorLogs();
+}
+
+function errPrevPage() {
+  if (errOffset <= 0) return;
+  errOffset -= errLimit;
+  if (errOffset < 0) errOffset = 0;
+  queryErrorLogs(true);
+}
+
+function errNextPage() {
+  if (errOffset + errLimit >= errTotal) return;
+  errOffset += errLimit;
+  queryErrorLogs(true);
+}
+
+function renderErrorLogs(result) {
+  var data = result && result.data ? result.data : [];
+  errTotal = result && result.total !== undefined ? result.total : 0;
+  errLimit = result && result.limit !== undefined ? result.limit : 20;
+  errOffset = result && result.offset !== undefined ? result.offset : 0;
+
+  if (!data.length) {
+    $('errorLogsResult').innerHTML = '<div class="stats-empty">无错误日志</div>';
+    return;
+  }
+
+  var totalPages = Math.max(1, Math.ceil(errTotal / errLimit));
+  var currentPage = Math.floor(errOffset / errLimit) + 1;
+
+  var html = '<div class="stats-wrap"><table class="stats-table"><thead><tr>';
+  html += '<th>时间</th><th>模型</th><th>厂商</th><th>状态码</th><th>错误信息</th><th>延迟</th><th style="width:60px"></th>';
+  html += '</tr></thead><tbody>';
+
+  data.forEach(function(row, idx) {
+    var errMsg = row.error_message || '';
+    var truncated = errMsg.length > 80 ? errMsg.slice(0, 80) + '...' : errMsg;
+    html += '<tr>';
+    html += '<td>' + escHtml(formatDateTimeFull(row.timestamp)) + '</td>';
+    html += '<td>' + escHtml(row.model || '-') + '</td>';
+    html += '<td>' + escHtml(row.provider || '-') + '</td>';
+    html += '<td class="num">' + (row.http_status || '-') + '</td>';
+    html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escAttr(errMsg) + '">' + escHtml(truncated) + '</td>';
+    html += '<td class="num">' + (row.latency_ms ? row.latency_ms.toFixed(0) : '-') + 'ms</td>';
+    html += '<td><button class="ghost sm" onclick="toggleErrBody(' + idx + ')">查看</button></td>';
+    html += '</tr>';
+    html += '<tr id="errBodyRow' + idx + '" style="display:none">';
+    html += '<td colspan="7" style="padding:0;background:#060d1a">';
+    html += '<div style="padding:12px;font-family:ui-monospace,monospace;font-size:11px;line-height:1.5;overflow-x:auto">';
+    html += '<div style="color:#22c55e;font-weight:600;margin-bottom:4px">— 请求体 —</div>';
+    html += '<pre style="margin:0 0 12px 0;white-space:pre-wrap;word-break:break-all;color:#c8d2e6">' + escHtml(row.request_body || '(空)') + '</pre>';
+    html += '<div style="color:#ef4444;font-weight:600;margin-bottom:4px">— 响应体 —</div>';
+    html += '<pre style="margin:0;white-space:pre-wrap;word-break:break-all;color:#c8d2e6">' + escHtml(row.response_body || '(空)') + '</pre>';
+    html += '</div></td></tr>';
+  });
+
+  html += '</tbody></table></div>';
+
+  /* 分页控件 */
+  var pageInfo = '共 ' + errTotal + ' 条 · 第 ' + currentPage + ' / ' + totalPages + ' 页';
+  var prevDisabled = errOffset <= 0;
+  var nextDisabled = currentPage >= totalPages;
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px;">';
+  html += '<span style="color:#8899b4;">' + pageInfo + '</span>';
+  html += '<div style="display:flex;gap:6px;">';
+  html += '<button class="ghost sm" onclick="errPrevPage()"' + (prevDisabled ? ' disabled style="opacity:0.4;cursor:not-allowed;"' : '') + '">上一页</button>';
+  html += '<button class="ghost sm" onclick="errNextPage()"' + (nextDisabled ? ' disabled style="opacity:0.4;cursor:not-allowed;"' : '') + '">下一页</button>';
+  html += '</div></div>';
+
+  $('errorLogsResult').innerHTML = html;
+}
+
+function toggleErrBody(idx) {
+  var row = $('errBodyRow' + idx);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+function escAttr(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ── 启动 ──

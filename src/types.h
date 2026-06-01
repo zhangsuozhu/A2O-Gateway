@@ -272,7 +272,6 @@ struct gateway_job {
     /* 上游连接配置 */
     char *upstream_url;     /**< 上游提供商的 API 端点完整 URL */
     char *api_key;          /**< 用于上游认证的实际 API 密钥 */
-char *user_agent;       /**< 客户端 User-Agent（透传给上游） */
     char *provider_name;    /**< 上游提供商名称（如 "anthropic"、"openai"），用于路由 */
 
     /* 模型映射 */

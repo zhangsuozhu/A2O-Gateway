@@ -21,6 +21,7 @@
 #include "stream.h"
 #include "convert.h"
 #include "stats.h"
+#include "db.h"
 #include "log.h"
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -44,6 +45,27 @@ static void deferred_req_free(evutil_socket_t fd, short what, void *arg) {
     (void)fd; (void)what;
     struct evhttp_request *req = (struct evhttp_request *)arg;
     if (req) evhttp_request_free(req);
+}
+
+/* 在错误路径写入错误日志到 SQLite（含完整请求/响应体） */
+static void log_error_entry(gateway_job_t *job, int curl_code, const char *error_message) {
+    if (!job) return;
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double latency_ms = (now.tv_sec - job->start_time.tv_sec) * 1000.0 +
+                        (now.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
+    db_insert_error_log(
+        job->upstream_model ? job->upstream_model : job->client_model,
+        job->provider_name,
+        (int)job->upstream_status,
+        curl_code,
+        error_message,
+        job->request_body,
+        job->upstream_body.ptr,
+        latency_ms,
+        job->upstream_url,
+        job->client_model
+    );
 }
 
 /**
@@ -105,6 +127,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
         json_out = cJSON_PrintUnformatted(j);
         cJSON_Delete(j);
         code_out = 502;
+        log_error_entry(job, rc, curl_easy_strerror(rc));
     } else {
         curl_easy_getinfo(job->easy, CURLINFO_RESPONSE_CODE, &job->upstream_status);
         log_msg("INFO", "UPS_RESP model=%s upstream_status=%ld response_len=%zu",
@@ -124,6 +147,9 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
             json_out = cJSON_PrintUnformatted(e);
             cJSON_Delete(e);
             code_out = 502;
+            char err_buf[512];
+            snprintf(err_buf, sizeof(err_buf), "HTTP_%ld: %.*s", job->upstream_status, (int)(preview_len > 200 ? 200 : preview_len), body_preview);
+            log_error_entry(job, rc, err_buf);
         } else {
             if (job->passthrough == PT_ANTHROPIC) {
                 /* 透传模式：上游响应已是 Anthropic 格式，无需协议转换 */
@@ -139,6 +165,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                     json_out = cJSON_PrintUnformatted(j);
                     cJSON_Delete(j);
                     code_out = 502;
+                    log_error_entry(job, rc, "passthrough response parse failure");
                 } else {
                     /* 检测上游业务错误 */
                     cJSON *upstream_err = cJSON_GetObjectItemCaseSensitive(anth, "error");
@@ -149,6 +176,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         free(temp);
                         cJSON_Delete(anth);
                         code_out = 502;
+                        log_error_entry(job, rc, "passthrough upstream business error");
                     } else {
                         log_msg("INFO", "RESP_OK model=%s (passthrough)", job->client_model);
                         cJSON *usage = cJSON_GetObjectItemCaseSensitive(anth, "usage");
@@ -241,6 +269,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                     log_msg("ERROR", "OAI_PASS_UPSTREAM_ERR model=%s", job->client_model);
                     json_out = passthrough_openai_override_model(upstream_body, job->client_model);
                     code_out = 502;
+                    log_error_entry(job, rc, "openai passthrough upstream error");
                 } else {
                     log_msg("INFO", "RESP_OK model=%s (openai-passthrough)", job->client_model);
                     json_out = passthrough_openai_override_model(upstream_body, job->client_model);
@@ -259,6 +288,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                     json_out = cJSON_PrintUnformatted(j);
                     cJSON_Delete(j);
                     code_out = 502;
+                    log_error_entry(job, rc, "response conversion failure");
                 } else {
                     bool has_error = false;
                     const char *resp_type = json_get_str(anth, "type");
@@ -268,6 +298,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         json_out = cJSON_PrintUnformatted(anth);
                         cJSON_Delete(anth);
                         code_out = 502;
+                        log_error_entry(job, rc, "upstream returned business error");
                     } else {
                         log_msg("INFO", "RESP_OK model=%s", job->client_model);
                         json_out = cJSON_PrintUnformatted(anth);
@@ -337,11 +368,15 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
         if (rc != CURLE_OK) {
             log_msg("ERROR", "STRM_FAIL model=%s url=%s curl_error=%s", job->client_model, job->upstream_url, curl_easy_strerror(rc));
             stream_emit_error(job, curl_easy_strerror(rc));
+            log_error_entry(job, rc, curl_easy_strerror(rc));
         }
         curl_easy_getinfo(job->easy, CURLINFO_RESPONSE_CODE, &job->upstream_status);
         if (job->upstream_status >= 400) {
             log_msg("ERROR", "STRM_HTTP_ERR model=%s status=%ld body=%.*s", job->client_model, job->upstream_status, (int)(job->upstream_body.len > 500 ? 500 : job->upstream_body.len), job->upstream_body.ptr ? job->upstream_body.ptr : "");
             stream_emit_error(job, "upstream returned HTTP error");
+            char err_buf[256];
+            snprintf(err_buf, sizeof(err_buf), "stream HTTP_%ld", job->upstream_status);
+            log_error_entry(job, rc, err_buf);
         }
         if (rc == CURLE_OK && job->upstream_status < 400) {
             log_msg("INFO", "STRM_OK model=%s upstream_status=%ld", job->client_model, job->upstream_status);
@@ -434,11 +469,6 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
             snprintf(auth, sizeof(auth), "Authorization: Bearer %s", job->api_key);
             job->headers = curl_slist_append(job->headers, auth);
         }
-    }
-    if (job->user_agent && *job->user_agent) {
-        char ua[512];
-        snprintf(ua, sizeof(ua), "User-Agent: %s", job->user_agent);
-        job->headers = curl_slist_append(job->headers, ua);
     }
     curl_easy_setopt(job->easy, CURLOPT_HTTPHEADER, job->headers);
     curl_multi_add_handle(w->multi, job->easy);
@@ -690,8 +720,7 @@ void job_free(gateway_job_t *job) {
     free(job->request_body); job->request_body = NULL;
     free(job->upstream_url); job->upstream_url = NULL;
     free(job->api_key); job->api_key = NULL;
-    free(job->user_agent); job->user_agent = NULL;
-    free(job->provider_name); job->provider_name = NULL;
+        free(job->provider_name); job->provider_name = NULL;
     free(job->client_model); job->client_model = NULL;
     free(job->upstream_model); job->upstream_model = NULL;
     membuf_free(&job->upstream_body);
