@@ -172,13 +172,15 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                     }
                 }
             } else {
-            /* 非流式 / 非透传：从原始 OpenAI 响应体中提取 cache token，
-             * 因为 convert_openai_response_to_anthropic 会丢掉这些字段 */
+            /* 非流式 / 非透传：直接从原始 OpenAI 响应体中提取 usage 和缓存 token，
+             * 不经过 convert_openai_response_to_anthropic 二次转换，避免信息丢失 */
             if (job->upstream_body.ptr) {
                 cJSON *raw = cJSON_Parse(job->upstream_body.ptr);
                 if (cJSON_IsObject(raw)) {
                     cJSON *u = cJSON_GetObjectItemCaseSensitive(raw, "usage");
                     if (cJSON_IsObject(u)) {
+                        input_tokens = (long)json_get_long(u, "prompt_tokens", 0);
+                        output_tokens = (long)json_get_long(u, "completion_tokens", 0);
                         long cr = json_get_long(u, "cache_read_input_tokens", 0);
                         if (cr == 0) cr = json_get_long(u, "prompt_cache_hit_tokens", 0);
                         if (cr == 0) {
@@ -222,11 +224,6 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                 } else {
                     log_msg("INFO", "RESP_OK model=%s", job->client_model);
                     json_out = cJSON_PrintUnformatted(anth);
-                    cJSON *usage = cJSON_GetObjectItemCaseSensitive(anth, "usage");
-                    if (usage) {
-                        input_tokens = (long)json_get_long(usage, "input_tokens", 0);
-                        output_tokens = (long)json_get_long(usage, "output_tokens", 0);
-                    }
                     cJSON_Delete(anth);
                     code_out = 200;
                 }
