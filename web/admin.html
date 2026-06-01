@@ -597,7 +597,7 @@ function createModel(m, i) {
   html += '<div class="g3" style="margin-bottom:5px">';
   html += '  <div><label>缓存策略</label><select class="fi" data-idx="' + i + '" data-k="cache_policy"><option value="off"' + (m.cache_policy !== 'auto' ? ' selected' : '') + '>off（关闭）</option><option value="auto"' + (m.cache_policy === 'auto' ? ' selected' : '') + '>auto（自动注入）</option></select></div>';
   html += '  <div><label>缓存阈值（tokens）</label><input class="fi" data-idx="' + i + '" data-k="min_cache_tokens" type="number" step="1" min="0" value="' + (m.min_cache_tokens || '1024') + '" placeholder="1024" /></div>';
-  html += '  <div></div>';
+  html += '  <div><label title="OpenAI/Anthropic/DeepSeek 默认已包含；Moonshot 默认不包含">prompt_tokens 含缓存</label><select class="fi" data-idx="' + i + '" data-k="prompt_tokens_includes_cache"><option value="true"' + (m.prompt_tokens_includes_cache !== false ? ' selected' : '') + '>是（默认）</option><option value="false"' + (m.prompt_tokens_includes_cache === false ? ' selected' : '') + '>否（Moonshot）</option></select></div>';
   html += '</div>';
 
   // extra_body
@@ -633,6 +633,7 @@ function collectOne(i) {
     var el = fields[j];
     var k = el.getAttribute('data-k');
     if (k === 'enabled') m[k] = el.value === 'true';
+    else if (k === 'prompt_tokens_includes_cache') m[k] = el.value === 'true';
     else if (k === 'priority') m[k] = Number(el.value);
     else if (k === 'min_cache_tokens') m[k] = Number(el.value) || 1024;
     else if (k === 'extra_body') { try { m[k] = el.value.trim() ? JSON.parse(el.value) : {}; } catch(e) {} }

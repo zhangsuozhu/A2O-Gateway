@@ -454,6 +454,7 @@ static void handle_messages(struct evhttp_request *req) {
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
     job->stream = stream;
     job->passthrough = passthrough;
+    job->prompt_tokens_includes_cache = config_get_prompt_tokens_includes_cache(model);
     job->stream_state.client_model = xstrdup(job->client_model);
     /* 基于 Anthropic 请求中的实际文本内容估算 prompt tokens，
      * 避免用整个请求 JSON 长度导致严重低估（尤其 Claude Code 的长系统提示）。

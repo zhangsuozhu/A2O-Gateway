@@ -14,6 +14,7 @@
 			"endpoint":	"",
 			"api_key":	"Your-api-key",
 			"upstream_model":	"deepseek-v4-flash",
+			"prompt_tokens_includes_cache":	true,
 			"extra_body":	{
 			},
 			"params":	{

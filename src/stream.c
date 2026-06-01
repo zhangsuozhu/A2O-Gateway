@@ -611,8 +611,8 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
         }
         cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
         if (cache_creation == 0) cache_creation = json_get_long(usage, "prompt_cache_miss_tokens", 0);
-        /* 修正：Moonshot 等 provider 的 prompt_tokens 不包含缓存 tokens */
-        if (cache_read > 0 && pt >= 0 && pt < cache_read) {
+        /* provider 的 prompt_tokens 不包含缓存 tokens，需合并 */
+        if (!job->prompt_tokens_includes_cache && pt > 0) {
             pt = pt + cache_read + cache_creation;
         }
         if (pt > 0) {

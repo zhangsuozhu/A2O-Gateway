@@ -191,8 +191,8 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         }
                         long cc = json_get_long(u, "cache_creation_input_tokens", 0);
                         if (cc == 0) cc = json_get_long(u, "prompt_cache_miss_tokens", 0);
-                        /* 修正：Moonshot 等 provider 的 prompt_tokens 不包含缓存 tokens */
-                        if (cr > 0 && pt >= 0 && pt < cr) {
+                        /* provider 的 prompt_tokens 不包含缓存 tokens，需合并 */
+                        if (!job->prompt_tokens_includes_cache && pt > 0) {
                             pt = pt + cr + cc;
                         }
                         input_tokens = pt;
