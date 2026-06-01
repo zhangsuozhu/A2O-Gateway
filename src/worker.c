@@ -149,15 +149,27 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         if (usage) {
                             input_tokens = (long)json_get_long(usage, "input_tokens", 0);
                             output_tokens = (long)json_get_long(usage, "output_tokens", 0);
-                            /* 缓存：兼容 Anthropic / DeepSeek / OpenAI 格式 */
+                            /* 缓存：兼容 Anthropic / DeepSeek / OpenAI / Moonshot 格式 */
                             long cr = json_get_long(usage, "cache_read_input_tokens", 0);
                             if (cr == 0) cr = json_get_long(usage, "prompt_cache_hit_tokens", 0);
+                            bool from_cached_tokens = false;
                             if (cr == 0) {
                                 cJSON *d = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
-                                if (cJSON_IsObject(d)) cr = json_get_long(d, "cached_tokens", 0);
+                                if (cJSON_IsObject(d)) {
+                                    cr = json_get_long(d, "cached_tokens", 0);
+                                    if (cr > 0) from_cached_tokens = true;
+                                }
                             }
                             long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
                             if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
+                            /* Moonshot / OpenAI: prompt_tokens 包含 cached_tokens，推导 cache_creation */
+                            if (cc == 0 && from_cached_tokens && cr > 0) {
+                                long pt = json_get_long(usage, "prompt_tokens", 0);
+                                if (pt > 0) {
+                                    cc = pt - cr;
+                                    if (cc < 0) cc = 0;
+                                }
+                            }
                             const char *m = job->upstream_model ? job->upstream_model : job->client_model;
                             const char *p = job->provider_name ? job->provider_name : "unknown";
                             if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
@@ -177,8 +189,24 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                     if (cJSON_IsObject(u)) {
                         long cr = json_get_long(u, "cache_read_input_tokens", 0);
                         if (cr == 0) cr = json_get_long(u, "prompt_cache_hit_tokens", 0);
+                        bool from_cached_tokens = false;
+                        if (cr == 0) {
+                            cJSON *d = cJSON_GetObjectItemCaseSensitive(u, "prompt_tokens_details");
+                            if (cJSON_IsObject(d)) {
+                                cr = json_get_long(d, "cached_tokens", 0);
+                                if (cr > 0) from_cached_tokens = true;
+                            }
+                        }
                         long cc = json_get_long(u, "cache_creation_input_tokens", 0);
                         if (cc == 0) cc = json_get_long(u, "prompt_cache_miss_tokens", 0);
+                        /* Moonshot / OpenAI: 从 prompt_tokens 推导 cache_creation */
+                        if (cc == 0 && from_cached_tokens && cr > 0) {
+                            long pt = json_get_long(u, "prompt_tokens", 0);
+                            if (pt > 0) {
+                                cc = pt - cr;
+                                if (cc < 0) cc = 0;
+                            }
+                        }
                         const char *m = job->upstream_model ? job->upstream_model : job->client_model;
                         const char *p = job->provider_name ? job->provider_name : "unknown";
                         if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
