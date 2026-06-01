@@ -596,6 +596,25 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
     if (cJSON_IsObject(usage)) {
         long pt = json_get_long(usage, "prompt_tokens", -1);
         long ct = json_get_long(usage, "completion_tokens", -1);
+        /* 提示词缓存：跨 provider 字段名兼容
+         * Anthropic: cache_read_input_tokens, cache_creation_input_tokens
+         * DeepSeek:  prompt_cache_hit_tokens,  prompt_cache_miss_tokens
+         * OpenAI/Moonshot: usage.prompt_tokens_details.cached_tokens */
+        long cache_read = 0, cache_creation = 0;
+        cache_read = json_get_long(usage, "cache_read_input_tokens", 0);
+        if (cache_read == 0) cache_read = json_get_long(usage, "prompt_cache_hit_tokens", 0);
+        if (cache_read == 0) {
+            cJSON *details = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
+            if (cJSON_IsObject(details)) {
+                cache_read = json_get_long(details, "cached_tokens", 0);
+            }
+        }
+        cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
+        if (cache_creation == 0) cache_creation = json_get_long(usage, "prompt_cache_miss_tokens", 0);
+        /* 修正：Moonshot 等 provider 的 prompt_tokens 不包含缓存 tokens */
+        if (cache_read > 0 && pt >= 0 && pt < cache_read) {
+            pt = pt + cache_read + cache_creation;
+        }
         if (pt > 0) {
             job->stream_state.prompt_tokens = pt;
             log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=%ld", job->client_model, pt);
@@ -606,32 +625,6 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
         if (ct >= 0) {
             job->stream_state.completion_tokens = ct;
             log_msg("DEBUG", "STREAM_USAGE model=%s completion_tokens=%ld", job->client_model, ct);
-        }
-        /* 提示词缓存：跨 provider 字段名兼容
-         * Anthropic: cache_read_input_tokens, cache_creation_input_tokens
-         * DeepSeek:  prompt_cache_hit_tokens,  prompt_cache_miss_tokens
-         * OpenAI/Moonshot: usage.prompt_tokens_details.cached_tokens
-         *   → cache_creation 推导: prompt_tokens - cached_tokens */
-        long cache_read = 0, cache_creation = 0;
-        cache_read = json_get_long(usage, "cache_read_input_tokens", 0);
-        if (cache_read == 0) cache_read = json_get_long(usage, "prompt_cache_hit_tokens", 0);
-        bool from_cached_tokens = false;
-        if (cache_read == 0) {
-            cJSON *details = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
-            if (cJSON_IsObject(details)) {
-                cache_read = json_get_long(details, "cached_tokens", 0);
-                if (cache_read > 0) from_cached_tokens = true;
-            }
-        }
-        cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
-        if (cache_creation == 0) cache_creation = json_get_long(usage, "prompt_cache_miss_tokens", 0);
-        /* OpenAI / Moonshot 推导 */
-        if (cache_creation == 0 && from_cached_tokens && cache_read > 0) {
-            long pt = json_get_long(usage, "prompt_tokens", 0);
-            if (pt > 0) {
-                cache_creation = pt - cache_read;
-                if (cache_creation < 0) cache_creation = 0;
-            }
         }
         job->stream_state.cache_read_input_tokens = cache_read;
         job->stream_state.cache_creation_input_tokens = cache_creation;

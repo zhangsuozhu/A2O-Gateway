@@ -179,7 +179,7 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                 if (cJSON_IsObject(raw)) {
                     cJSON *u = cJSON_GetObjectItemCaseSensitive(raw, "usage");
                     if (cJSON_IsObject(u)) {
-                        input_tokens = (long)json_get_long(u, "prompt_tokens", 0);
+                        long pt = (long)json_get_long(u, "prompt_tokens", 0);
                         output_tokens = (long)json_get_long(u, "completion_tokens", 0);
                         long cr = json_get_long(u, "cache_read_input_tokens", 0);
                         if (cr == 0) cr = json_get_long(u, "prompt_cache_hit_tokens", 0);
@@ -191,6 +191,11 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         }
                         long cc = json_get_long(u, "cache_creation_input_tokens", 0);
                         if (cc == 0) cc = json_get_long(u, "prompt_cache_miss_tokens", 0);
+                        /* 修正：Moonshot 等 provider 的 prompt_tokens 不包含缓存 tokens */
+                        if (cr > 0 && pt >= 0 && pt < cr) {
+                            pt = pt + cr + cc;
+                        }
+                        input_tokens = pt;
                         job->stream_state.cache_read_input_tokens = cr;
                         job->stream_state.cache_creation_input_tokens = cc;
                         const char *m = job->upstream_model ? job->upstream_model : job->client_model;
