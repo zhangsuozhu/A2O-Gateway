@@ -48,7 +48,7 @@ ctest --test-dir build --output-on-failure
 ./build/test_log
 ```
 
-Test coverage: `test_convert` tests protocol conversion (Anthropic ↔ OpenAI), `test_stream` tests SSE parsing and streaming conversion, `test_log` tests realtime print text extraction (`rt_extract_text_from_json`).
+Test coverage: `test_convert` tests protocol conversion (Anthropic ↔ OpenAI), `test_stream` tests SSE parsing and streaming conversion, `test_log` tests realtime print text extraction (`rt_extract_text_from_json`), `test_cache_control` tests cache policy injection (`cache_control` block generation).
 
 ### Debug & Test Commands
 ```bash
@@ -109,9 +109,10 @@ Claude Code → HTTP POST /v1/messages (Anthropic format)
 | `handlers.c` | 664 | HTTP route dispatch, auth, request lifecycle, admin API |
 | `stream.c` | 765 | SSE streaming parser, chunk-by-chunk conversion, tool stream tracking |
 | `convert.c` | 543 | Bidirectional protocol conversion (Anthropic ↔ OpenAI), URL construction |
-| `worker.c` | 432 | libcurl multi worker thread pool, job queue, CURL easy handle lifecycle |
+| `worker.c` | 432 | libcurl multi worker thread pool, job queue, CURL easy handle lifecycle (forced HTTP/1.1) |
 | `stats.c` | 354 | Request statistics: per-model breakdown, time windows, latency tracking |
 | `config.c` | 404 | JSON config load/save, masked output, RWLock-protected hot-reload |
+| `db.c` | 354 | SQLite persistence: request history, hourly/daily/model aggregate stats (WAL mode) |
 | `log.c` | 422 | Logging: level filtering, file output, realtime terminal print |
 | `web/admin.html` | 850 | Single-file Web UI for config management (served at /admin) |
 
@@ -131,6 +132,9 @@ Config is held in `app_config_t *config_root;` (defined in `config.c`) and is RW
 ### Key Internal Patterns
 
 - **`gateway_job` lifecycle**: Allocated per-request, holds the full lifecycle (Anthropic request body → upstream response → client response). Freed after response is fully sent.
+- **SQLite persistence (`db.c`)**: All request logs and aggregate stats are persisted to SQLite (WAL mode). Tables: `requests`, `hourly_stats`, `daily_stats`, `model_stats`. Each tracks `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`.
+- **Cache control (`cache_policy`)**: When set to `"auto"`, `convert_inject_system_cache()` in `convert.c` wraps system prompts with `cache_control: {type: "ephemeral"}` if text length exceeds `min_cache_tokens`.
+- **`prompt_tokens_includes_cache`**: Model-level boolean (default `true`). Controls whether `prompt_tokens` returned by the upstream already includes cached tokens. `false` is required for Moonshot, where `prompt_tokens` excludes cache and the gateway must merge `pt + cache_read + cache_creation` for accurate stats.
 - **`membuf_t`**: Dynamic buffer (ptr + len + capacity) used for accumulating request/response bodies. Every heap-allocated buffer in the system uses this.
 - **`stream_state_t`**: Tracks SSE parsing state across chunks. For tool calls in streaming mode, `tool_stream_state_t[MAX_TOOL_STREAMS]` tracks partial delta accumulations.
 - **Threading model**: `handle_messages()` → `enqueue_job()` (wakes a worker via condvar). Workers run `libcurl multi` event loops. When a worker completes an upstream response, it calls `send_response_cb()` back in the main thread's event loop.
@@ -199,7 +203,7 @@ OpenAI models like DeepSeek-R1 return `choices[0].delta.reasoning_content` in st
 - **Modify protocol conversion**: Edit `convert.c` (request/build side) or `stream.c` (response/streaming side).
 - **Change config schema**: Update `config.h/c` accessors (`config_get_*` / `config_set_*`) and `web/admin.html` form fields.
 - **Add vendor-specific extra params**: Use `extra_body` in model config (e.g., `{"enable_search": true}`). No code change needed for simple key-value extras.
-- **Enable HTTP/2 multiplexing**: libcurl multi already handles connection reuse; confirm at build time that libcurl was built with HTTP/2 support.
+- **Enable HTTP/2 multiplexing**: Not applicable — the gateway forces `CURL_HTTP_VERSION_1_1` to avoid framing errors with upstreams like DeepSeek.
 
 ### Route Registration Pattern
 
@@ -244,6 +248,9 @@ Use `config/gateway.local.json` at runtime (copy from `config/gateway.json`, nev
 | `upstream_model` | yes | Real model name sent to upstream |
 | `params` | no | temperature/top_p/max_tokens/etc |
 | `extra_body` | no | Vendor-specific JSON merged into request body |
+| `cache_policy` | no | `"off"` or `"auto"` — auto injects `cache_control: {type: "ephemeral"}` for system prompts above `min_cache_tokens` |
+| `min_cache_tokens` | no | Threshold (tokens) for auto cache injection, default 1024 |
+| `prompt_tokens_includes_cache` | no | `true` (default) = `prompt_tokens` already includes cache hit/creation (OpenAI/Anthropic/DeepSeek). `false` = cache is separate from `prompt_tokens` (Moonshot); gateway will merge `pt + cr + cc` for stats |
 
 ### Real-time Print Modes
 
