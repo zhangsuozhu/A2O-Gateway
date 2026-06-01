@@ -600,7 +600,7 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
             job->stream_state.prompt_tokens = pt;
             log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=%ld", job->client_model, pt);
         } else if (pt == 0) {
-            log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=0 (ignored, keep_estimate=%ld)",
+            log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=0 (ignored, kept=%ld)",
                     job->client_model, job->stream_state.prompt_tokens);
         }
         if (ct >= 0) {
@@ -746,7 +746,7 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
             job->stream_state.prompt_tokens = in_tok;
             log_msg("DEBUG", "ANTH_USAGE model=%s input_tokens=%ld", job->client_model, in_tok);
         } else if (in_tok == 0) {
-            log_msg("DEBUG", "ANTH_USAGE model=%s input_tokens=0 (ignored, keep_estimate=%ld)",
+            log_msg("DEBUG", "ANTH_USAGE model=%s input_tokens=0 (ignored, kept=%ld)",
                     job->client_model, job->stream_state.prompt_tokens);
         }
         if (out_tok >= 0) {
@@ -766,7 +766,7 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
                 job->stream_state.prompt_tokens = in_tok;
                 log_msg("DEBUG", "ANTH_USAGE model=%s msg.input_tokens=%ld", job->client_model, in_tok);
             } else if (in_tok == 0) {
-                log_msg("DEBUG", "ANTH_USAGE model=%s msg.input_tokens=0 (ignored, keep_estimate=%ld)",
+                log_msg("DEBUG", "ANTH_USAGE model=%s msg.input_tokens=0 (ignored, kept=%ld)",
                         job->client_model, job->stream_state.prompt_tokens);
             }
             if (out_tok >= 0) {
