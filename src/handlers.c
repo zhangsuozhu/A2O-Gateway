@@ -388,6 +388,9 @@ static void handle_health(struct evhttp_request *req) {
  * 此后 worker 线程负责上游网络 I/O，主线程继续处理其他 HTTP 请求。
  */
 static void handle_messages(struct evhttp_request *req) {
+    struct timespec t0, t1, t2;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    t1 = t0;
     if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) {
         log_msg("WARN", "messages non-POST method");
         send_error_json(req, 405, "method_not_allowed", "POST required");
@@ -414,6 +417,7 @@ static void handle_messages(struct evhttp_request *req) {
     cJSON *oai = NULL;
     char *upstream_body = NULL;
     char *url = NULL;
+    double dt1 = 0;
     if (passthrough) {
         /* 透传模式：替换 model 为 upstream_model 后直接转发 */
         const char *um = json_get_str(model, "upstream_model");
@@ -425,6 +429,8 @@ static void handle_messages(struct evhttp_request *req) {
         free(body); body = NULL;
     } else {
         oai = build_openai_request(anth, model);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        dt1 = (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1000000.0;
         upstream_body = cJSON_PrintUnformatted(oai);
         url = make_upstream_url(model);
     }
@@ -467,6 +473,9 @@ static void handle_messages(struct evhttp_request *req) {
     size_t req_body_len = upstream_body ? strlen(upstream_body) : 0;
     stats_request_begin(job->upstream_model, job->provider_name, stream, req_body_len);
     evhttp_request_own(req);
+    clock_gettime(CLOCK_MONOTONIC, &t2);
+    double dt_total = (t2.tv_sec - t0.tv_sec) * 1000.0 + (t2.tv_nsec - t0.tv_nsec) / 1000000.0;
+    log_msg("INFO", "MAIN_THREAD model=%s convert=%.2fms total=%.2fms", client_model, dt1, dt_total);
     enqueue_job(job);
 
     rt_print("[REQ] model=%s provider=%s stream=%d passthrough=%d body_len=%zu",
