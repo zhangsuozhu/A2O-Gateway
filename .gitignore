@@ -4,3 +4,6 @@ config/gateway.local.json
 gateway.log
 *.bak
 cc2open
+gateway.db*
+nohup.out
+test/
