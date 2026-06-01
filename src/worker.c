@@ -362,6 +362,8 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
 static void worker_add_easy(worker_t *w, gateway_job_t *job) {
     struct timespec t0;
     clock_gettime(CLOCK_MONOTONIC, &t0);
+    /* queue_wait = 从 enqueue 到 worker 开始处理 */
+    double qw = (t0.tv_sec - job->start_time.tv_sec) * 1000.0 + (t0.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
     job->job_state = JOB_SENDING;
     job->active_next = NULL;
     if (w->active_tail) w->active_tail->active_next = job;
@@ -461,7 +463,9 @@ static void *worker_loop(void *arg) {
         CURLMcode mc = curl_multi_perform(w->multi, &w->still_running);
         if (mc != CURLM_OK) log_msg("ERROR", "curl_multi_perform: %s", curl_multi_strerror(mc));
         int numfds = 0;
-        curl_multi_poll(w->multi, NULL, 0, 200, &numfds);
+        if (w->still_running > 0) {
+            curl_multi_poll(w->multi, NULL, 0, 200, &numfds);
+        }
 
         int msgs_left = 0;
         CURLMsg *msg;

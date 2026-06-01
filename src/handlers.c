@@ -246,98 +246,6 @@ static void send_error_json(struct evhttp_request *req, int code, const char *ty
 }
 
 /**
- * @brief 从 Anthropic 请求中提取所有文本内容的字符长度
- * @param anth_req 解析后的 Anthropic 请求 JSON
- * @return 文本字符总数（不包括 JSON 结构开销）
- *
- * 遍历 system、messages[*].content、tools 中的实际文本，
- * 用于更准确地估算 prompt tokens（避免用整个请求 JSON 长度导致严重偏差）。
- */
-static size_t count_text_chars_in_anthropic_request(cJSON *anth_req) {
-    size_t total = 0;
-
-    /* system prompt */
-    cJSON *system = cJSON_GetObjectItemCaseSensitive(anth_req, "system");
-    if (cJSON_IsString(system) && system->valuestring) {
-        total += strlen(system->valuestring);
-    } else if (cJSON_IsArray(system)) {
-        cJSON *blk;
-        cJSON_ArrayForEach(blk, system) {
-            const char *type = json_get_str(blk, "type");
-            if (type && strcmp(type, "text") == 0) {
-                const char *text = json_get_str(blk, "text");
-                if (text) total += strlen(text);
-            }
-        }
-    }
-
-    /* messages */
-    cJSON *messages = cJSON_GetObjectItemCaseSensitive(anth_req, "messages");
-    if (cJSON_IsArray(messages)) {
-        cJSON *m;
-        cJSON_ArrayForEach(m, messages) {
-            cJSON *content = cJSON_GetObjectItemCaseSensitive(m, "content");
-            if (cJSON_IsString(content) && content->valuestring) {
-                total += strlen(content->valuestring);
-            } else if (cJSON_IsArray(content)) {
-                cJSON *blk;
-                cJSON_ArrayForEach(blk, content) {
-                    const char *type = json_get_str(blk, "type");
-                    if (type && strcmp(type, "text") == 0) {
-                        const char *text = json_get_str(blk, "text");
-                        if (text) total += strlen(text);
-                    } else if (type && strcmp(type, "thinking") == 0) {
-                        const char *text = json_get_str(blk, "thinking");
-                        if (text) total += strlen(text);
-                    } else if (type && strcmp(type, "tool_result") == 0) {
-                        cJSON *trc = cJSON_GetObjectItemCaseSensitive(blk, "content");
-                        if (cJSON_IsString(trc) && trc->valuestring) {
-                            total += strlen(trc->valuestring);
-                        } else if (cJSON_IsArray(trc)) {
-                            cJSON *trb;
-                            cJSON_ArrayForEach(trb, trc) {
-                                const char *trt = json_get_str(trb, "type");
-                                if (trt && strcmp(trt, "text") == 0) {
-                                    const char *trtext = json_get_str(trb, "text");
-                                    if (trtext) total += strlen(trtext);
-                                }
-                            }
-                        }
-                    } else if (type && strcmp(type, "tool_use") == 0) {
-                        const char *name = json_get_str(blk, "name");
-                        if (name) total += strlen(name);
-                        cJSON *input = cJSON_GetObjectItemCaseSensitive(blk, "input");
-                        if (input) {
-                            char *s = cJSON_PrintUnformatted(input);
-                            if (s) { total += strlen(s); free(s); }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /* tools definitions */
-    cJSON *tools = cJSON_GetObjectItemCaseSensitive(anth_req, "tools");
-    if (cJSON_IsArray(tools)) {
-        cJSON *t;
-        cJSON_ArrayForEach(t, tools) {
-            const char *name = json_get_str(t, "name");
-            const char *desc = json_get_str(t, "description");
-            if (name) total += strlen(name);
-            if (desc) total += strlen(desc);
-            cJSON *schema = cJSON_GetObjectItemCaseSensitive(t, "input_schema");
-            if (schema) {
-                char *s = cJSON_PrintUnformatted(schema);
-                if (s) { total += strlen(s); free(s); }
-            }
-        }
-    }
-
-    return total;
-}
-
-/**
  * @brief 从 JSON 对象估算 token 数量
  * @param root cJSON 对象
  * @return 估算的 token 数（至少为 1）
@@ -462,13 +370,8 @@ static void handle_messages(struct evhttp_request *req) {
     job->passthrough = passthrough;
     job->prompt_tokens_includes_cache = config_get_prompt_tokens_includes_cache(model);
     job->stream_state.client_model = xstrdup(job->client_model);
-    /* 基于 Anthropic 请求中的实际文本内容估算 prompt tokens，
-     * 避免用整个请求 JSON 长度导致严重低估（尤其 Claude Code 的长系统提示）。
-     * 如果上游在流式响应中返回了准确的 usage.prompt_tokens，此估算会被覆盖。 */
-    size_t prompt_chars = count_text_chars_in_anthropic_request(anth);
-    job->stream_state.prompt_tokens = (long)(prompt_chars / 4) + 1;
-    log_msg("DEBUG", "TOK_EST_INIT model=%s prompt_chars=%zu prompt_tokens_est=%ld",
-            client_model, prompt_chars, job->stream_state.prompt_tokens);
+    /* 不估算 prompt tokens，只认上游返回的真实 usage 值 */
+    job->stream_state.prompt_tokens = 0;
     clock_gettime(CLOCK_MONOTONIC, &job->start_time);
     size_t req_body_len = upstream_body ? strlen(upstream_body) : 0;
     stats_request_begin(job->upstream_model, job->provider_name, stream, req_body_len);

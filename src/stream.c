@@ -618,12 +618,9 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
             pt = pt + cache_read + cache_creation;
             log_msg("DEBUG", "STREAM_CACHE_FIX model=%s pt_after=%ld", job->client_model, pt);
         }
-        if (pt > 0) {
+        if (pt >= 0) {
             job->stream_state.prompt_tokens = pt;
             log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=%ld", job->client_model, pt);
-        } else if (pt == 0) {
-            log_msg("DEBUG", "STREAM_USAGE model=%s prompt_tokens=0 (ignored, kept=%ld)",
-                    job->client_model, job->stream_state.prompt_tokens);
         }
         if (ct >= 0) {
             job->stream_state.completion_tokens = ct;
@@ -747,12 +744,9 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
         if (in_tok < 0) in_tok = json_get_long(usage, "prompt_tokens", -1);
         if (out_tok < 0) out_tok = json_get_long(usage, "completion_tokens", -1);
 
-        if (in_tok > 0) {
+        if (in_tok >= 0) {
             job->stream_state.prompt_tokens = in_tok;
             log_msg("DEBUG", "ANTH_USAGE model=%s input_tokens=%ld", job->client_model, in_tok);
-        } else if (in_tok == 0) {
-            log_msg("DEBUG", "ANTH_USAGE model=%s input_tokens=0 (ignored, kept=%ld)",
-                    job->client_model, job->stream_state.prompt_tokens);
         }
         if (out_tok >= 0) {
             job->stream_state.completion_tokens = out_tok;
@@ -792,12 +786,9 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
         if (cJSON_IsObject(msg_usage)) {
             long in_tok = json_get_long(msg_usage, "input_tokens", -1);
             long out_tok = json_get_long(msg_usage, "output_tokens", -1);
-            if (in_tok > 0) {
+            if (in_tok >= 0) {
                 job->stream_state.prompt_tokens = in_tok;
                 log_msg("DEBUG", "ANTH_USAGE model=%s msg.input_tokens=%ld", job->client_model, in_tok);
-            } else if (in_tok == 0) {
-                log_msg("DEBUG", "ANTH_USAGE model=%s msg.input_tokens=0 (ignored, kept=%ld)",
-                        job->client_model, job->stream_state.prompt_tokens);
             }
             if (out_tok >= 0) {
                 job->stream_state.completion_tokens = out_tok;
