@@ -87,4 +87,20 @@ char *config_get_string_copy(const char *key);
 int config_set_active_model(const char *id, char **err);
 int config_set_string(const char *key, const char *value, char **err);
 
+/* ---------- 模型级 cache_control 字段读取 ---------- */
+
+/**
+ * config_get_cache_policy() — 读取模型配置中的 cache_policy
+ * @param model_cfg: 单个模型配置 cJSON 对象（config_select_model_copy 返回值或等价物）
+ * @return: "off" / "auto" / 其他字符串。NULL 或缺省 → "off"
+ */
+const char *config_get_cache_policy(const cJSON *model_cfg);
+
+/**
+ * config_get_min_cache_tokens() — 读取模型配置中的 min_cache_tokens 阈值
+ * @param model_cfg: 单个模型配置 cJSON 对象
+ * @return: 缺省 1024
+ */
+int config_get_min_cache_tokens(const cJSON *model_cfg);
+
 #endif

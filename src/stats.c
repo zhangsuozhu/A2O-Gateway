@@ -422,45 +422,54 @@ void stats_reset(void) {
 static const double CACHE_READ_DISCOUNT  = 0.9;
 static const double CACHE_WRITE_PREMIUM  = 0.25;
 
+/* 锁 + 拿 entry + 出循环时自动解锁。`entry` 是循环内可见的 model_stat_entry_t*。
+ * 用法: WITH_STATS_LOCK(e, m, p) { e->field = ...; }
+ * 实现：单趟 for 循环，init 段取锁 + 拿 entry，loop-cond 段判 entry 非 NULL，
+ *       post 段把 entry 置 NULL 并解锁。break 会跳过 unlock（避免死锁），但
+ *       所有现有调用者都用大括号包住，没有 break。 */
+#define WITH_STATS_LOCK(entry, model, provider)                                          \
+    for (model_stat_entry_t *entry =                                                    \
+             (pthread_mutex_lock(&G_STATS.lock), get_model_entry((model), (provider))); \
+         entry;                                                                          \
+         entry = NULL, pthread_mutex_unlock(&G_STATS.lock))
+
 void stats_record_cache_read(const char *model, const char *provider, unsigned long tokens) {
-    pthread_mutex_lock(&G_STATS.lock);
-    model_stat_entry_t *e = get_model_entry(model, provider);
-    e->cache_read_input_tokens += tokens;
-    double per_token = e->input_price_per_million / 1e6;
-    e->saved_cost_usd += (double)tokens * per_token * CACHE_READ_DISCOUNT;
-    pthread_mutex_unlock(&G_STATS.lock);
+    WITH_STATS_LOCK(e, model, provider) {
+        e->cache_read_input_tokens += tokens;
+        double per_token = e->input_price_per_million / 1e6;
+        e->saved_cost_usd += (double)tokens * per_token * CACHE_READ_DISCOUNT;
+    }
 }
 
 void stats_record_cache_creation(const char *model, const char *provider, unsigned long tokens) {
-    pthread_mutex_lock(&G_STATS.lock);
-    model_stat_entry_t *e = get_model_entry(model, provider);
-    e->cache_creation_input_tokens += tokens;
-    double per_token = e->input_price_per_million / 1e6;
-    e->saved_cost_usd -= (double)tokens * per_token * CACHE_WRITE_PREMIUM;
-    pthread_mutex_unlock(&G_STATS.lock);
+    WITH_STATS_LOCK(e, model, provider) {
+        e->cache_creation_input_tokens += tokens;
+        double per_token = e->input_price_per_million / 1e6;
+        e->saved_cost_usd -= (double)tokens * per_token * CACHE_WRITE_PREMIUM;
+    }
 }
 
 unsigned long stats_get_cache_read(const char *model, const char *provider) {
-    pthread_mutex_lock(&G_STATS.lock);
-    model_stat_entry_t *e = get_model_entry(model, provider);
-    unsigned long v = (unsigned long)e->cache_read_input_tokens;
-    pthread_mutex_unlock(&G_STATS.lock);
+    unsigned long v = 0;
+    WITH_STATS_LOCK(e, model, provider) {
+        v = (unsigned long)e->cache_read_input_tokens;
+    }
     return v;
 }
 
 unsigned long stats_get_cache_creation(const char *model, const char *provider) {
-    pthread_mutex_lock(&G_STATS.lock);
-    model_stat_entry_t *e = get_model_entry(model, provider);
-    unsigned long v = (unsigned long)e->cache_creation_input_tokens;
-    pthread_mutex_unlock(&G_STATS.lock);
+    unsigned long v = 0;
+    WITH_STATS_LOCK(e, model, provider) {
+        v = (unsigned long)e->cache_creation_input_tokens;
+    }
     return v;
 }
 
 double stats_get_saved_cost(const char *model, const char *provider) {
-    pthread_mutex_lock(&G_STATS.lock);
-    model_stat_entry_t *e = get_model_entry(model, provider);
-    double v = e->saved_cost_usd;
-    pthread_mutex_unlock(&G_STATS.lock);
+    double v = 0.0;
+    WITH_STATS_LOCK(e, model, provider) {
+        v = e->saved_cost_usd;
+    }
     return v;
 }
 

@@ -460,21 +460,21 @@ static void handle_messages(struct evhttp_request *req) {
     log_msg("DEBUG", "TOK_EST_INIT model=%s prompt_chars=%zu prompt_tokens_est=%ld",
             client_model, prompt_chars, job->stream_state.prompt_tokens);
     clock_gettime(CLOCK_MONOTONIC, &job->start_time);
-    stats_request_begin(job->upstream_model, job->provider_name, stream, body ? strlen(body) : 0);
+    size_t req_body_len = upstream_body ? strlen(upstream_body) : 0;
+    stats_request_begin(job->upstream_model, job->provider_name, stream, req_body_len);
     evhttp_request_own(req);
     enqueue_job(job);
 
+    rt_print("[REQ] model=%s provider=%s stream=%d passthrough=%d body_len=%zu",
+        client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, passthrough ? 1 : 0, req_body_len);
     if (body) {
-        rt_print("[REQ] model=%s provider=%s stream=%d passthrough=%d body_len=%zu",
-            client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, passthrough ? 1 : 0, strlen(body));
         rt_print_json("[REQ]", body);
-    } else {
-        rt_print("[REQ] model=%s provider=%s stream=%d passthrough=%d body_len=0",
-            client_model, provider ? provider : "openai-compatible", stream ? 1 : 0, passthrough ? 1 : 0);
+    } else if (upstream_body) {
+        rt_print_json("[REQ]", upstream_body);
     }
 
     log_msg("INFO", "SEND model=%s upstream_model=%s provider=%s stream=%d passthrough=%d url=%s upstream_body_len=%zu",
-        job->client_model, job->upstream_model, job->provider_name, stream ? 1 : 0, passthrough ? 1 : 0, job->upstream_url, upstream_body ? strlen(upstream_body) : 0);
+        job->client_model, job->upstream_model, job->provider_name, stream ? 1 : 0, passthrough ? 1 : 0, job->upstream_url, req_body_len);
     if (upstream_body) {
         size_t ol = strlen(upstream_body);
         if (ol > 4096) ol = 4096;
@@ -672,6 +672,16 @@ static void handle_stats(struct evhttp_request *req) {
  * 清空所有统计数据，重置启动时间。
  * 需要管理员认证。
  */
+static void handle_db_reset(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) { send_error_json(req, 405, "method_not_allowed", "POST required"); return; }
+    bool ok = db_reset();
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddBoolToObject(out, "ok", ok);
+    send_json(req, 200, out);
+    cJSON_Delete(out);
+}
+
 static void handle_stats_reset(struct evhttp_request *req) {
     if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
     if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) { send_error_json(req, 405, "method_not_allowed", "POST required"); return; }
@@ -954,6 +964,7 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/admin/api/switch")) { handle_switch(req); return; }
     if (URI_IS("/admin/api/stats") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_stats(req); return; }
     if (URI_IS("/admin/api/stats/reset") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_stats_reset(req); return; }
+    if (URI_IS("/admin/api/db/reset") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_db_reset(req); return; }
     if (URI_IS("/admin/api/history") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_history(req); return; }
     if (URI_IS("/admin/api/hourly") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_hourly(req); return; }
     if (URI_IS("/admin/api/daily") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_daily(req); return; }

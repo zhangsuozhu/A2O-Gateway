@@ -4,6 +4,7 @@
 //          均尚未实现。链接必然失败 → ctest 红。
 
 #include "convert.h"
+#include "config.h"
 #include "stats.h"
 
 #include <cjson/cJSON.h>
@@ -215,7 +216,137 @@ static int test_stats_record_cache_read(void) {
     return 0;
 }
 
-/* ---------- 10. 缓存写 token 被记录，扣减节省金额 ---------- */
+/* ---------- 11. config_get_cache_policy 显式 auto ---------- */
+static int test_config_get_cache_policy_with_auto(void) {
+    cJSON *cfg = cJSON_CreateObject();
+    cJSON_AddStringToObject(cfg, "cache_policy", "auto");
+    const char *p = config_get_cache_policy(cfg);
+    int rc = (p && strcmp(p, "auto") == 0) ? 0 : fail("expected \"auto\"");
+    cJSON_Delete(cfg);
+    return rc;
+}
+
+/* ---------- 12. cache_policy 缺省 → "off" ---------- */
+static int test_config_get_cache_policy_default_off(void) {
+    cJSON *cfg = cJSON_CreateObject();
+    cJSON_AddStringToObject(cfg, "upstream_model", "x");
+    const char *p = config_get_cache_policy(cfg);
+    int rc = (p && strcmp(p, "off") == 0) ? 0 : fail("expected default \"off\"");
+    cJSON_Delete(cfg);
+    return rc;
+}
+
+/* ---------- 13. NULL model_cfg → "off"，不崩溃 ---------- */
+static int test_config_get_cache_policy_null_safe(void) {
+    const char *p = config_get_cache_policy(NULL);
+    int rc = (p && strcmp(p, "off") == 0) ? 0 : fail("NULL cfg should give \"off\"");
+    return rc;
+}
+
+/* ---------- 14. min_cache_tokens 自定义值 ---------- */
+static int test_config_get_min_cache_tokens_custom(void) {
+    cJSON *cfg = cJSON_CreateObject();
+    cJSON_AddNumberToObject(cfg, "min_cache_tokens", 512);
+    int v = config_get_min_cache_tokens(cfg);
+    int rc = (v == 512) ? 0 : fail("expected 512");
+    cJSON_Delete(cfg);
+    return rc;
+}
+
+/* ---------- 15. min_cache_tokens 缺省 → 1024 ---------- */
+static int test_config_get_min_cache_tokens_default(void) {
+    cJSON *cfg = cJSON_CreateObject();
+    int v = config_get_min_cache_tokens(cfg);
+    int rc = (v == 1024) ? 0 : fail("expected default 1024");
+    cJSON_Delete(cfg);
+    return rc;
+}
+
+/* ---------- 16. 端到端：build_openai_request 拿到 cache_policy=auto 真的注入 ---------- */
+static int test_build_request_injects_when_config_auto(void) {
+    /* 构造 ~2000 token 的 system 字符串 */
+    char *big = malloc(20000);
+    char *p = big;
+    for (int i = 0; i < 1600; i++) p += sprintf(p, "word%d ", i);
+    *p = 0;
+
+    cJSON *anth = cJSON_CreateObject();
+    cJSON_AddStringToObject(anth, "model", "client-model");
+    cJSON *sys = cJSON_CreateString(big);
+    cJSON_AddItemToObject(anth, "system", sys);
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON *m = cJSON_CreateObject();
+    cJSON_AddStringToObject(m, "role", "user");
+    cJSON_AddStringToObject(m, "content", "hi");
+    cJSON_AddItemToArray(msgs, m);
+    cJSON_AddItemToObject(anth, "messages", msgs);
+
+    cJSON *cfg = cJSON_CreateObject();
+    cJSON_AddStringToObject(cfg, "upstream_model", "upstream-x");
+    cJSON_AddStringToObject(cfg, "cache_policy", "auto");
+
+    cJSON *out = build_openai_request(anth, cfg);
+    int rc = 0;
+    if (!out) rc = fail("build_openai_request returned NULL");
+    else {
+        cJSON *omsgs = cJSON_GetObjectItemCaseSensitive(out, "messages");
+        cJSON *osys = cJSON_IsArray(omsgs) ? cJSON_GetArrayItem(omsgs, 0) : NULL;
+        cJSON *ocontent = cJSON_GetObjectItemCaseSensitive(osys, "content");
+        if (!cJSON_IsArray(ocontent)) {
+            rc = fail("output system content should be array (auto policy + long text)");
+        } else {
+            cJSON *last = cJSON_GetArrayItem(ocontent, cJSON_GetArraySize(ocontent) - 1);
+            cJSON *cc = cJSON_GetObjectItemCaseSensitive(last, "cache_control");
+            if (!cc) rc = fail("end-to-end: cache_control not injected");
+        }
+        cJSON_Delete(out);
+    }
+
+    free(big);
+    cJSON_Delete(anth);
+    cJSON_Delete(cfg);
+    return rc;
+}
+
+/* ---------- 17. 端到端：cache_policy 缺省 → 保持原行为 ---------- */
+static int test_build_request_no_inject_when_config_missing(void) {
+    char *big = malloc(20000);
+    char *p = big;
+    for (int i = 0; i < 1600; i++) p += sprintf(p, "word%d ", i);
+    *p = 0;
+
+    cJSON *anth = cJSON_CreateObject();
+    cJSON_AddStringToObject(anth, "model", "client-model");
+    cJSON_AddStringToObject(anth, "system", big);
+    cJSON *msgs = cJSON_CreateArray();
+    cJSON *m = cJSON_CreateObject();
+    cJSON_AddStringToObject(m, "role", "user");
+    cJSON_AddStringToObject(m, "content", "hi");
+    cJSON_AddItemToArray(msgs, m);
+    cJSON_AddItemToObject(anth, "messages", msgs);
+
+    cJSON *cfg = cJSON_CreateObject();
+    cJSON_AddStringToObject(cfg, "upstream_model", "upstream-x");
+    /* 注意：故意不加 cache_policy */
+
+    cJSON *out = build_openai_request(anth, cfg);
+    int rc = 0;
+    if (!out) rc = fail("build_openai_request returned NULL");
+    else {
+        cJSON *omsgs = cJSON_GetObjectItemCaseSensitive(out, "messages");
+        cJSON *osys = cJSON_IsArray(omsgs) ? cJSON_GetArrayItem(omsgs, 0) : NULL;
+        cJSON *ocontent = cJSON_GetObjectItemCaseSensitive(osys, "content");
+        if (!cJSON_IsString(ocontent)) rc = fail("default policy: content should remain string");
+        else if (strstr(ocontent->valuestring, "cache_control"))
+            rc = fail("default policy: should not contain cache_control");
+        cJSON_Delete(out);
+    }
+
+    free(big);
+    cJSON_Delete(anth);
+    cJSON_Delete(cfg);
+    return rc;
+}
 static int test_stats_record_cache_creation(void) {
     stats_reset_for_test();
     stats_set_input_price_for_test("qwen-coder", 1.0);
@@ -243,6 +374,13 @@ int main(void) {
     failed |= test_cache_control_ephemeral_shape();
     failed |= test_stats_record_cache_read();
     failed |= test_stats_record_cache_creation();
+    failed |= test_config_get_cache_policy_with_auto();
+    failed |= test_config_get_cache_policy_default_off();
+    failed |= test_config_get_cache_policy_null_safe();
+    failed |= test_config_get_min_cache_tokens_custom();
+    failed |= test_config_get_min_cache_tokens_default();
+    failed |= test_build_request_injects_when_config_auto();
+    failed |= test_build_request_no_inject_when_config_missing();
     if (failed == 0) printf("ALL CACHE CONTROL TESTS PASSED\n");
     return failed ? 1 : 0;
 }

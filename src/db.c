@@ -3,8 +3,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 
 static sqlite3 *g_db = NULL;
+static char *g_db_path = NULL;
 
 /* 建表 SQL */
 static const char *CREATE_TABLES_SQL =
@@ -99,8 +101,21 @@ bool db_init(const char *db_path) {
         return false;
     }
 
-    log_msg("INFO", "db_init ok: %s", db_path);
+    free(g_db_path);
+    g_db_path = db_path ? strdup(db_path) : strdup("gateway.db");
+    log_msg("INFO", "db_init ok: %s", g_db_path);
     return true;
+}
+
+bool db_reset(void) {
+    if (!g_db_path) return false;
+    if (g_db) {
+        sqlite3_close(g_db);
+        g_db = NULL;
+    }
+    unlink(g_db_path);
+    log_msg("INFO", "db_reset: removed %s", g_db_path);
+    return db_init(g_db_path);
 }
 
 void db_close(void) {

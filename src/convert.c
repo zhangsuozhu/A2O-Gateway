@@ -1,4 +1,5 @@
 #include "convert.h"
+#include "config.h"
 #include "log.h"
 #include <stdio.h>
 #include <string.h>
@@ -46,8 +47,9 @@ static char *strip_cch(const char *text) {
         /* 跳过前导空白（空格、制表符、回车）*/
         while (*p == ' ' || *p == '\t' || *p == '\r') p++;
 
-        /* 检查是否以 anthropic-attribution: 开头 */
-        if (strncmp(p, "anthropic-attribution:", 22) == 0) {
+        /* 检查是否以 anthropic-attribution: 或 x-anthropic-billing-header: 开头 */
+        if (strncmp(p, "anthropic-attribution:", 22) == 0 ||
+            strncmp(p, "x-anthropic-billing-header:", 27) == 0) {
             /* 跳过这整行 */
             const char *nl = strchr(p, '\n');
             if (nl) p = nl + 1;
@@ -696,20 +698,6 @@ int approx_token_count(const char *text) {
     return (int)(words * 1.3f);
 }
 
-static const char *cc_get_policy(const cJSON *cfg) {
-    if (!cfg) return "off";
-    cJSON *p = cJSON_GetObjectItemCaseSensitive(cfg, "cache_policy");
-    if (!cJSON_IsString(p) || !p->valuestring) return "off";
-    return p->valuestring;
-}
-
-static int cc_get_min_tokens(const cJSON *cfg) {
-    if (!cfg) return 1024;
-    cJSON *n = cJSON_GetObjectItemCaseSensitive(cfg, "min_cache_tokens");
-    if (!cJSON_IsNumber(n)) return 1024;
-    return (int)n->valuedouble;
-}
-
 static const char *cc_extract_system_text(cJSON *anth_system) {
     if (!anth_system) return NULL;
     if (cJSON_IsString(anth_system)) return anth_system->valuestring;
@@ -727,7 +715,7 @@ static const char *cc_extract_system_text(cJSON *anth_system) {
 
 bool convert_inject_system_cache(cJSON *out_sys_msg, cJSON *anth_system, const cJSON *model_cfg) {
     if (!out_sys_msg) return false;
-    if (strcmp(cc_get_policy(model_cfg), "auto") != 0) return false;
+    if (strcmp(config_get_cache_policy(model_cfg), "auto") != 0) return false;
 
     cJSON *content = cJSON_GetObjectItemCaseSensitive(out_sys_msg, "content");
     const char *text = NULL;
@@ -735,7 +723,7 @@ bool convert_inject_system_cache(cJSON *out_sys_msg, cJSON *anth_system, const c
     if (!text) text = cc_extract_system_text(anth_system);
     if (!text) return false;
 
-    int min_tokens = cc_get_min_tokens(model_cfg);
+    int min_tokens = config_get_min_cache_tokens(model_cfg);
     if (approx_token_count(text) < min_tokens) return false;
 
     cJSON *arr = cJSON_CreateArray();
@@ -751,7 +739,7 @@ bool convert_inject_system_cache(cJSON *out_sys_msg, cJSON *anth_system, const c
 bool convert_inject_tools_cache(cJSON *out_tools, const cJSON *model_cfg) {
     if (!out_tools || !cJSON_IsArray(out_tools)) return false;
     if (cJSON_GetArraySize(out_tools) == 0) return false;
-    if (strcmp(cc_get_policy(model_cfg), "auto") != 0) return false;
+    if (strcmp(config_get_cache_policy(model_cfg), "auto") != 0) return false;
 
     cJSON *last = cJSON_GetArrayItem(out_tools, cJSON_GetArraySize(out_tools) - 1);
     cJSON *fn = cJSON_GetObjectItemCaseSensitive(last, "function");

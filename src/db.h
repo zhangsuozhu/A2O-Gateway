@@ -16,6 +16,9 @@ bool db_init(const char *db_path);
 /* 关闭数据库连接 */
 void db_close(void);
 
+/* 清空数据库（关闭连接、删除文件、重新初始化） */
+bool db_reset(void);
+
 /* 写入单条请求记录 */
 bool db_insert_request(const char *model, const char *provider, bool stream,
                        int http_status, int curl_code,

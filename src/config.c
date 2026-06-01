@@ -456,3 +456,22 @@ int config_set_string(const char *key, const char *value, char **err) {
     if (rc != 0 && err) *err = xstrdup("failed to persist config");
     return rc;
 }
+
+/* ---------- 模型级 cache_control 字段读取 ---------- */
+/* 读取是无锁的（cJSON 树在持有者手里是只读视图；调用方负责
+ * config_select_model_copy 出来的副本本身的生命周期）。 */
+
+const char *config_get_cache_policy(const cJSON *model_cfg) {
+    if (!model_cfg) return "off";
+    const cJSON *p = cJSON_GetObjectItemCaseSensitive(model_cfg, "cache_policy");
+    if (!cJSON_IsString(p) || !p->valuestring) return "off";
+    return p->valuestring;
+}
+
+int config_get_min_cache_tokens(const cJSON *model_cfg) {
+    if (!model_cfg) return 1024;
+    const cJSON *n = cJSON_GetObjectItemCaseSensitive(model_cfg, "min_cache_tokens");
+    if (!cJSON_IsNumber(n)) return 1024;
+    int v = (int)n->valuedouble;
+    return v > 0 ? v : 1024;
+}
