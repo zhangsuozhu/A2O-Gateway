@@ -607,9 +607,20 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
             job->stream_state.completion_tokens = ct;
             log_msg("DEBUG", "STREAM_USAGE model=%s completion_tokens=%ld", job->client_model, ct);
         }
-        /* 提示词缓存：Anthropic / Bailian 格式 */
-        long cache_read = json_get_long(usage, "cache_read_input_tokens", 0);
-        long cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
+        /* 提示词缓存：跨 provider 字段名兼容
+         * Anthropic: cache_read_input_tokens, cache_creation_input_tokens
+         * DeepSeek:  prompt_cache_hit_tokens,  prompt_cache_miss_tokens
+         * OpenAI:    usage.prompt_tokens_details.cached_tokens */
+        long cache_read = 0, cache_creation = 0;
+        cache_read = json_get_long(usage, "cache_read_input_tokens", 0);
+        if (cache_read == 0) cache_read = json_get_long(usage, "prompt_cache_hit_tokens", 0);
+        if (cache_read == 0) {
+            cJSON *details = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
+            if (cJSON_IsObject(details))
+                cache_read = json_get_long(details, "cached_tokens", 0);
+        }
+        cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
+        if (cache_creation == 0) cache_creation = json_get_long(usage, "prompt_cache_miss_tokens", 0);
         if (cache_read > 0 || cache_creation > 0) {
             const char *m = job->upstream_model ? job->upstream_model : job->client_model;
             const char *p = job->provider_name ? job->provider_name : "unknown";

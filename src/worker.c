@@ -149,8 +149,15 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         if (usage) {
                             input_tokens = (long)json_get_long(usage, "input_tokens", 0);
                             output_tokens = (long)json_get_long(usage, "output_tokens", 0);
+                            /* 缓存：兼容 Anthropic / DeepSeek / OpenAI 格式 */
                             long cr = json_get_long(usage, "cache_read_input_tokens", 0);
+                            if (cr == 0) cr = json_get_long(usage, "prompt_cache_hit_tokens", 0);
+                            if (cr == 0) {
+                                cJSON *d = cJSON_GetObjectItemCaseSensitive(usage, "prompt_tokens_details");
+                                if (cJSON_IsObject(d)) cr = json_get_long(d, "cached_tokens", 0);
+                            }
                             long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
+                            if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
                             const char *m = job->upstream_model ? job->upstream_model : job->client_model;
                             const char *p = job->provider_name ? job->provider_name : "unknown";
                             if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
@@ -169,7 +176,9 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                     cJSON *u = cJSON_GetObjectItemCaseSensitive(raw, "usage");
                     if (cJSON_IsObject(u)) {
                         long cr = json_get_long(u, "cache_read_input_tokens", 0);
+                        if (cr == 0) cr = json_get_long(u, "prompt_cache_hit_tokens", 0);
                         long cc = json_get_long(u, "cache_creation_input_tokens", 0);
+                        if (cc == 0) cc = json_get_long(u, "prompt_cache_miss_tokens", 0);
                         const char *m = job->upstream_model ? job->upstream_model : job->client_model;
                         const char *p = job->provider_name ? job->provider_name : "unknown";
                         if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
