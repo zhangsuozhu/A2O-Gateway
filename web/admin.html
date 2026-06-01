@@ -137,6 +137,7 @@
     <button class="ghost sm tab-btn active" id="tabConfigBtn" onclick="switchTab('config')">⚙️ 配置</button>
     <button class="ghost sm tab-btn" id="tabRealtimeBtn" onclick="switchTab('realtime')">🔴 实时</button>
     <button class="ghost sm tab-btn" id="tabStatsBtn" onclick="switchTab('stats')">📊 统计</button>
+    <button class="ghost sm tab-btn" id="tabHistoryBtn" onclick="switchTab('history')">📜 历史</button>
     <button class="ghost sm" id="envBtn" onclick="toggleEnv()" style="display:none">🔑 连接信息</button>
     <button class="green" id="saveBtn" onclick="save()" style="display:none">💾 保存</button>
     <button id="addBtn" onclick="showAddModal()" style="display:none">＋ 添加模型</button>
@@ -274,6 +275,28 @@
         <button class="red" onclick="resetStats()">🗑 重置统计</button>
       </div>
     </div>
+
+    <div id="tabHistoryContent" style="display:none">
+      <div class="card">
+        <h2>📜 历史查询</h2>
+        <div class="row" style="margin-bottom:12px;align-items:flex-end">
+          <div style="flex:1.5"><label>查询类型</label>
+            <select id="histType">
+              <option value="history">请求明细</option>
+              <option value="hourly">小时趋势</option>
+              <option value="daily">日趋势</option>
+            </select>
+          </div>
+          <div style="flex:1.5"><label>模型</label><input id="histModel" placeholder="留空=全部" /></div>
+          <div><label>起始</label><input type="datetime-local" id="histFrom" /></div>
+          <div><label>结束</label><input type="datetime-local" id="histTo" /></div>
+          <div style="flex:0.5"><button onclick="queryHistory()">🔍 查询</button></div>
+        </div>
+        <div id="historyResult">
+          <div class="stats-empty">选择查询条件后点击查询</div>
+        </div>
+      </div>
+    </div>
   </div>
 </main>
 
@@ -319,6 +342,11 @@ let statsTimer = null;
 let rtTimer = null;
 let currentTab = 'config';
 let hiddenPaused = false;
+
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 // ── 登录 ──
 function checkLogin() {
@@ -777,9 +805,11 @@ function switchTab(tab) {
   $('tabConfigBtn').classList.toggle('active', tab === 'config');
   $('tabRealtimeBtn').classList.toggle('active', tab === 'realtime');
   $('tabStatsBtn').classList.toggle('active', tab === 'stats');
+  $('tabHistoryBtn').classList.toggle('active', tab === 'history');
   $('tabConfigContent').style.display = tab === 'config' ? '' : 'none';
   $('tabRealtimeContent').style.display = tab === 'realtime' ? '' : 'none';
   $('tabStatsContent').style.display = tab === 'stats' ? '' : 'none';
+  $('tabHistoryContent').style.display = tab === 'history' ? '' : 'none';
 
   var showConfigBtns = tab === 'config' && cfg;
   $('saveBtn').style.display = showConfigBtns ? '' : 'none';
@@ -1052,6 +1082,134 @@ async function resetStats() {
   } catch (e) {
     toast('重置失败: ' + (e.message || String(e)), true);
   }
+}
+
+// ── 历史查询 ──
+
+function formatDateTime(ts) {
+  var d = new Date(ts * 1000);
+  return d.toLocaleString('zh-CN');
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+async function queryHistory() {
+  var type = $('histType').value;
+  var model = $('histModel').value.trim();
+  var fromVal = $('histFrom').value;
+  var toVal = $('histTo').value;
+  var fromTs = fromVal ? Math.floor(new Date(fromVal).getTime() / 1000) : 0;
+  var toTs = toVal ? Math.floor(new Date(toVal).getTime() / 1000) : 0;
+
+  var url = '/admin/api/' + type;
+  var params = [];
+  if (model) params.push('model=' + encodeURIComponent(model));
+  if (fromTs) {
+    if (type === 'history') params.push('from=' + fromTs);
+    else params.push('from=' + encodeURIComponent(fromVal.slice(0, 13) + ':00'));
+  }
+  if (toTs) {
+    if (type === 'history') params.push('to=' + toTs);
+    else params.push('to=' + encodeURIComponent(toVal.slice(0, 13) + ':00'));
+  }
+  if (params.length) url += '?' + params.join('&');
+
+  $('historyResult').innerHTML = '<div class="loading">查询中...</div>';
+  try {
+    var r = await fetch(url, { headers: apiHeaders() });
+    if (!r.ok) { var t = await r.text(); $('historyResult').innerHTML = '<div class="error-box">查询失败: ' + escHtml(t) + '</div>'; return; }
+    var data = await r.json();
+    if (type === 'history') renderHistoryTable(data);
+    else if (type === 'hourly') renderAggTable(data, 'hour', '小时');
+    else renderAggTable(data, 'day', '日期');
+  } catch (e) {
+    $('historyResult').innerHTML = '<div class="error-box">查询失败: ' + escHtml(e.message || String(e)) + '</div>';
+  }
+}
+
+function renderHistoryTable(data) {
+  if (!data || !data.length) {
+    $('historyResult').innerHTML = '<div class="stats-empty">无数据</div>';
+    return;
+  }
+  var html = '<div class="stats-wrap"><table class="stats-table"><thead><tr>';
+  var cols = ['时间', '模型', '厂商', '流式', '状态码', '输入tokens', '输出tokens', '延迟(ms)', '请求大小', '响应大小'];
+  cols.forEach(function(c) { html += '<th>' + c + '</th>'; });
+  html += '</tr></thead><tbody>';
+  data.forEach(function(row) {
+    html += '<tr>';
+    html += '<td>' + escHtml(formatDateTime(row.timestamp)) + '</td>';
+    html += '<td>' + escHtml(row.model || '-') + '</td>';
+    html += '<td>' + escHtml(row.provider || '-') + '</td>';
+    html += '<td>' + (row.stream ? '是' : '否') + '</td>';
+    html += '<td class="num">' + (row.http_status || '-') + '</td>';
+    html += '<td class="num">' + (row.input_tokens || 0) + '</td>';
+    html += '<td class="num">' + (row.output_tokens || 0) + '</td>';
+    html += '<td class="num">' + (row.latency_ms ? row.latency_ms.toFixed(1) : '-') + '</td>';
+    html += '<td class="num">' + formatBytes(row.request_bytes || 0) + '</td>';
+    html += '<td class="num">' + formatBytes(row.response_bytes || 0) + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  $('historyResult').innerHTML = html;
+}
+
+function renderAggTable(data, timeKey, timeLabel) {
+  if (!data || !data.length) {
+    $('historyResult').innerHTML = '<div class="stats-empty">无数据</div>';
+    return;
+  }
+  // 按时间聚合（同一 timeKey 合并所有模型）
+  var agg = {};
+  data.forEach(function(row) {
+    var k = row[timeKey];
+    if (!agg[k]) agg[k] = { requests:0, success:0, failed:0, input_tokens:0, output_tokens:0, latency_count:0, total_latency_ms:0 };
+    agg[k].requests += row.requests || 0;
+    agg[k].success += row.success || 0;
+    agg[k].failed += row.failed || 0;
+    agg[k].input_tokens += row.input_tokens || 0;
+    agg[k].output_tokens += row.output_tokens || 0;
+    agg[k].latency_count += row.latency_count || 0;
+    agg[k].total_latency_ms += row.total_latency_ms || 0;
+  });
+  var keys = Object.keys(agg).sort();
+
+  // 柱状图（请求数）
+  var maxReq = 0;
+  keys.forEach(function(k) { if (agg[k].requests > maxReq) maxReq = agg[k].requests; });
+  var chartHtml = '<div class="chart-wrap"><h3>请求数趋势</h3><div class="chart-bar">';
+  keys.forEach(function(k) {
+    var pct = maxReq > 0 ? (agg[k].requests / maxReq * 100) : 0;
+    chartHtml += '<div class="bar" style="height:' + pct.toFixed(1) + '%" title="' + escHtml(k) + ': ' + agg[k].requests + '">';
+    chartHtml += '<div class="bar-val">' + agg[k].requests + '</div>';
+    chartHtml += '<div class="bar-label">' + escHtml(k.slice(5)) + '</div>';
+    chartHtml += '</div>';
+  });
+  chartHtml += '</div></div>';
+
+  // 表格
+  var html = chartHtml + '<div class="stats-wrap"><table class="stats-table"><thead><tr>';
+  var cols = [timeLabel, '请求数', '成功', '失败', '输入tokens', '输出tokens', '平均延迟(ms)'];
+  cols.forEach(function(c) { html += '<th>' + c + '</th>'; });
+  html += '</tr></thead><tbody>';
+  keys.forEach(function(k) {
+    var a = agg[k];
+    html += '<tr>';
+    html += '<td>' + escHtml(k) + '</td>';
+    html += '<td class="num">' + a.requests + '</td>';
+    html += '<td class="num">' + a.success + '</td>';
+    html += '<td class="num">' + a.failed + '</td>';
+    html += '<td class="num">' + a.input_tokens + '</td>';
+    html += '<td class="num">' + a.output_tokens + '</td>';
+    html += '<td class="num">' + (a.latency_count > 0 ? (a.total_latency_ms / a.latency_count).toFixed(1) : '-') + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  $('historyResult').innerHTML = html;
 }
 
 // ── 启动 ──

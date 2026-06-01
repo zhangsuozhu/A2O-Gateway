@@ -81,6 +81,13 @@ cJSON *convert_message_content_blocks(cJSON *messages, const char *role, cJSON *
 cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg);
 
 /**
+ * @brief 从 Anthropic 请求的 system 字段中移除 CCH 行
+ * @param anth_req 解析后的 Anthropic Messages API 请求体（会被原地修改）
+ * @note 处理 system 为字符串或内容块数组两种情况，保护第三方 API 的 prompt 缓存机制
+ */
+void filter_cch_from_anthropic_request(cJSON *anth_req);
+
+/**
  * @brief 构建上游 API 的完整请求 URL
  * @param model_cfg 模型配置对象
  * @return 返回新分配的 URL 字符串，以 /chat/completions 结尾

@@ -38,6 +38,7 @@
 #include "worker.h"
 #include "handlers.h"
 #include "stats.h"
+#include "db.h"
 
 /* ====================================================================
  * 精灵模式（daemon）相关常量
@@ -261,6 +262,11 @@ int main(int argc, char **argv) {
     config_load(config_path);
     stats_init();
 
+    /* 初始化 SQLite 数据库（持久化统计和历史） */
+    char *db_path = config_get_string_copy("db_path");
+    db_init(db_path ? db_path : "gateway.db");
+    free(db_path);
+
     /* 从配置读取 log_file，默认使用 gateway.log（兼容旧版）或 /var/log 路径 */
     char *log_file = config_get_string_copy("log_file");
     const char *log_path = log_file ? log_file : "gateway.log";
@@ -316,6 +322,7 @@ int main(int argc, char **argv) {
     /* Cleanup config via a one-shot */
     char *json = config_masked_json();
     free(json);
+    db_close();
     curl_global_cleanup();
     log_open(NULL);
     remove_pid_file(DAEMON_PID_FILE);

@@ -35,6 +35,62 @@ char *make_id(const char *prefix) {
     return xstrdup(buf);
 }
 
+/* 从 system prompt 中移除 Claude Code Attribution Header (CCH) 行，
+ * 避免变化的 attribution 字符串破坏第三方 API 的 prompt 缓存机制。 */
+static char *strip_cch(const char *text) {
+    if (!text) return NULL;
+    const char *p = text;
+
+    while (*p) {
+        const char *line_start = p;
+        /* 跳过前导空白（空格、制表符、回车）*/
+        while (*p == ' ' || *p == '\t' || *p == '\r') p++;
+
+        /* 检查是否以 anthropic-attribution: 开头 */
+        if (strncmp(p, "anthropic-attribution:", 22) == 0) {
+            /* 跳过这整行 */
+            const char *nl = strchr(p, '\n');
+            if (nl) p = nl + 1;
+            else return strdup(""); /* 只有 CCH，返回空 */
+        } else {
+            /* 不是 CCH 行，从当前行开始返回剩余内容 */
+            return strdup(line_start);
+        }
+    }
+    return strdup("");
+}
+
+/* 从 Anthropic 请求的 system 字段中移除 CCH 行 */
+void filter_cch_from_anthropic_request(cJSON *anth_req) {
+    if (!anth_req) return;
+    cJSON *system = cJSON_GetObjectItemCaseSensitive(anth_req, "system");
+    if (!system) return;
+
+    if (cJSON_IsString(system) && system->valuestring) {
+        char *filtered = strip_cch(system->valuestring);
+        if (filtered) {
+            cJSON_ReplaceItemInObjectCaseSensitive(anth_req, "system", cJSON_CreateString(filtered));
+            free(filtered);
+        }
+    } else if (cJSON_IsArray(system)) {
+        cJSON *blk;
+        cJSON_ArrayForEach(blk, system) {
+            const char *type = json_get_str(blk, "type");
+            if (type && strcmp(type, "text") == 0) {
+                cJSON *text_obj = cJSON_GetObjectItemCaseSensitive(blk, "text");
+                if (cJSON_IsString(text_obj) && text_obj->valuestring) {
+                    char *filtered = strip_cch(text_obj->valuestring);
+                    if (filtered) {
+                        cJSON_ReplaceItemInObjectCaseSensitive(blk, "text", cJSON_CreateString(filtered));
+                        free(filtered);
+                    }
+                }
+                break; /* 只处理第一个 text 块，CCH 通常在开头 */
+            }
+        }
+    }
+}
+
 /**
  * @brief 将字符串解析为 JSON 对象，失败时返回空对象
  * @param s JSON 字符串，允许为 NULL 或空字符串
@@ -340,7 +396,16 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
     if (system) {
         cJSON *sys = cJSON_CreateObject();
         cJSON_AddStringToObject(sys, "role", "system");
-        cJSON_AddItemToObject(sys, "content", string_or_content_text(system));
+        cJSON *sys_content = string_or_content_text(system);
+        if (cJSON_IsString(sys_content) && sys_content->valuestring) {
+            char *filtered = strip_cch(sys_content->valuestring);
+            if (filtered) {
+                cJSON_Delete(sys_content);
+                sys_content = cJSON_CreateString(filtered);
+                free(filtered);
+            }
+        }
+        cJSON_AddItemToObject(sys, "content", sys_content);
         cJSON_AddItemToArray(messages, sys);
     }
 

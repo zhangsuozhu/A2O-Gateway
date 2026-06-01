@@ -4,6 +4,7 @@ project(claude_code_openai_gateway C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wno-unused-parameter -O2")
+set_source_files_properties(src/sqlite3/sqlite3.c PROPERTIES COMPILE_FLAGS "-O0 -DSQLITE_THREADSAFE=1 -DSQLITE_OMIT_LOAD_EXTENSION")
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBEVENT REQUIRED libevent libevent_pthreads)
@@ -19,12 +20,14 @@ set(GATEWAY_SOURCES
     src/worker.c
     src/handlers.c
     src/stats.c
+    src/db.c
+    src/sqlite3/sqlite3.c
 )
 
 add_executable(cc-oai-gateway ${GATEWAY_SOURCES})
-target_include_directories(cc-oai-gateway PRIVATE src ${LIBEVENT_INCLUDE_DIRS} ${LIBCURL_INCLUDE_DIRS} ${CJSON_INCLUDE_DIRS})
+target_include_directories(cc-oai-gateway PRIVATE src src/sqlite3 ${LIBEVENT_INCLUDE_DIRS} ${LIBCURL_INCLUDE_DIRS} ${CJSON_INCLUDE_DIRS})
 target_link_directories(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARY_DIRS} ${LIBCURL_LIBRARY_DIRS} ${CJSON_LIBRARY_DIRS})
-target_link_libraries(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARIES} ${LIBCURL_LIBRARIES} ${CJSON_LIBRARIES} pthread)
+target_link_libraries(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARIES} ${LIBCURL_LIBRARIES} ${CJSON_LIBRARIES} pthread m dl)
 
 enable_testing()
 add_executable(test_convert tests/test_convert.c src/convert.c)

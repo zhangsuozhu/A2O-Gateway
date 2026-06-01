@@ -1,5 +1,6 @@
 #include "stats.h"
 #include "log.h"
+#include "db.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -134,7 +135,7 @@ void stats_request_begin(const char *model, const char *provider, bool stream, s
 }
 
 void stats_request_end(const char *model, const char *provider, bool stream, int http_status,
-                       CURLcode curl_code, size_t response_bytes,
+                       CURLcode curl_code, size_t request_bytes, size_t response_bytes,
                        long input_tokens, long output_tokens,
                        double latency_ms) {
     pthread_mutex_lock(&G_STATS.lock);
@@ -244,6 +245,20 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
     else window->failed++;
 
     pthread_mutex_unlock(&G_STATS.lock);
+
+    /* 持久化到 SQLite */
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    char hour_str[32], day_str[32];
+    strftime(hour_str, sizeof(hour_str), "%Y-%m-%d %H:00", tm_info);
+    strftime(day_str, sizeof(day_str), "%Y-%m-%d", tm_info);
+
+    db_insert_request(model, provider, stream, http_status, (int)curl_code,
+                      input_tokens, output_tokens, latency_ms,
+                      request_bytes, response_bytes, model, "");
+    db_update_hourly_stats(hour_str, model, provider, success, input_tokens, output_tokens, latency_ms);
+    db_update_daily_stats(day_str, model, provider, success, input_tokens, output_tokens, latency_ms);
+    db_update_model_stats(model, provider, success, input_tokens, output_tokens, latency_ms);
 }
 
 static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double window_sec, double uptime) {

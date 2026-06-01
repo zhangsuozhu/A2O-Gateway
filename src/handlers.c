@@ -17,6 +17,7 @@
 #include "convert.h"
 #include "worker.h"
 #include "stats.h"
+#include "db.h"
 #include "log.h"
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -322,10 +323,11 @@ static void handle_messages(struct evhttp_request *req) {
     char *upstream_body = NULL;
     char *url = NULL;
     if (passthrough) {
-        /* 透传模式：不做协议转换，直接使用原始 Anthropic 请求体 */
-        upstream_body = body;  /* 转移所有权 */
-        body = NULL;
+        /* 透传模式：过滤 CCH 后直接使用 Anthropic 请求体 */
+        filter_cch_from_anthropic_request(anth);
+        upstream_body = cJSON_PrintUnformatted(anth);
         url = make_upstream_url_for_messages(model);
+        free(body); body = NULL;
     } else {
         oai = build_openai_request(anth, model);
         upstream_body = cJSON_PrintUnformatted(oai);
@@ -584,6 +586,146 @@ static void handle_stats_reset(struct evhttp_request *req) {
     cJSON_Delete(ok);
 }
 
+/* 从 URI 查询字符串中提取指定参数值
+ * 返回值写入 out 缓冲区，成功返回 out 指针，失败返回 NULL
+ */
+static const char *query_get(const char *uri, const char *key, char *out, size_t out_len) {
+    const char *q = strchr(uri, '?');
+    if (!q) return NULL;
+    q++;
+    size_t klen = strlen(key);
+    while (*q) {
+        const char *amp = strchr(q, '&');
+        size_t seg_len = amp ? (size_t)(amp - q) : strlen(q);
+        if (seg_len > klen && strncmp(q, key, klen) == 0 && q[klen] == '=') {
+            size_t vlen = seg_len - klen - 1;
+            if (vlen >= out_len) vlen = out_len - 1;
+            memcpy(out, q + klen + 1, vlen);
+            out[vlen] = 0;
+            /* URL decode：简单处理 + 和 %XX */
+            char *p = out;
+            while (*p) {
+                if (*p == '+') { *p = ' '; }
+                else if (*p == '%' && p[1] && p[2]) {
+                    char hex[3] = {p[1], p[2], 0};
+                    *p = (char)strtol(hex, NULL, 16);
+                    memmove(p + 1, p + 3, strlen(p + 3) + 1);
+                }
+                p++;
+            }
+            return out;
+        }
+        if (!amp) break;
+        q = amp + 1;
+    }
+    return NULL;
+}
+
+/**
+ * @brief 请求历史查询（/admin/api/history GET）
+ *
+ * 查询参数：
+ *   - model: 模型名过滤
+ *   - from: 起始 Unix 时间戳
+ *   - to: 结束 Unix 时间戳
+ *   - limit: 最大返回条数（默认 100）
+ *   - offset: 偏移量（默认 0）
+ */
+static void handle_history(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    const char *uri = evhttp_request_get_uri(req);
+    char buf_model[128] = {0};
+    char buf_from[32] = {0};
+    char buf_to[32] = {0};
+    char buf_limit[16] = {0};
+    char buf_offset[16] = {0};
+    const char *model = query_get(uri, "model", buf_model, sizeof(buf_model));
+    const char *from_s = query_get(uri, "from", buf_from, sizeof(buf_from));
+    const char *to_s = query_get(uri, "to", buf_to, sizeof(buf_to));
+    const char *limit_s = query_get(uri, "limit", buf_limit, sizeof(buf_limit));
+    const char *offset_s = query_get(uri, "offset", buf_offset, sizeof(buf_offset));
+
+    time_t from_t = from_s ? (time_t)atoll(from_s) : 0;
+    time_t to_t = to_s ? (time_t)atoll(to_s) : 0;
+    int limit = limit_s ? atoi(limit_s) : 100;
+    int offset = offset_s ? atoi(offset_s) : 0;
+
+    cJSON *arr = db_query_history(model && *model ? model : NULL, from_t, to_t, limit, offset);
+    char *json = cJSON_PrintUnformatted(arr);
+    cJSON_Delete(arr);
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add_printf(out, "%s", json ? json : "[]");
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "application/json; charset=utf-8");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+    free(json);
+}
+
+/**
+ * @brief 小时聚合统计查询（/admin/api/hourly GET）
+ *
+ * 查询参数：
+ *   - model: 模型名过滤
+ *   - from: 起始小时 "YYYY-MM-DD HH:00"
+ *   - to: 结束小时 "YYYY-MM-DD HH:00"
+ */
+static void handle_hourly(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    const char *uri = evhttp_request_get_uri(req);
+    char buf_model[128] = {0};
+    char buf_from[32] = {0};
+    char buf_to[32] = {0};
+    const char *model = query_get(uri, "model", buf_model, sizeof(buf_model));
+    const char *from_s = query_get(uri, "from", buf_from, sizeof(buf_from));
+    const char *to_s = query_get(uri, "to", buf_to, sizeof(buf_to));
+
+    cJSON *arr = db_query_hourly(model && *model ? model : NULL,
+                                  from_s && *from_s ? from_s : NULL,
+                                  to_s && *to_s ? to_s : NULL);
+    char *json = cJSON_PrintUnformatted(arr);
+    cJSON_Delete(arr);
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add_printf(out, "%s", json ? json : "[]");
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "application/json; charset=utf-8");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+    free(json);
+}
+
+/**
+ * @brief 日聚合统计查询（/admin/api/daily GET）
+ *
+ * 查询参数：
+ *   - model: 模型名过滤
+ *   - from: 起始日期 "YYYY-MM-DD"
+ *   - to: 结束日期 "YYYY-MM-DD"
+ */
+static void handle_daily(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    const char *uri = evhttp_request_get_uri(req);
+    char buf_model[128] = {0};
+    char buf_from[32] = {0};
+    char buf_to[32] = {0};
+    const char *model = query_get(uri, "model", buf_model, sizeof(buf_model));
+    const char *from_s = query_get(uri, "from", buf_from, sizeof(buf_from));
+    const char *to_s = query_get(uri, "to", buf_to, sizeof(buf_to));
+
+    cJSON *arr = db_query_daily(model && *model ? model : NULL,
+                                 from_s && *from_s ? from_s : NULL,
+                                 to_s && *to_s ? to_s : NULL);
+    char *json = cJSON_PrintUnformatted(arr);
+    cJSON_Delete(arr);
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add_printf(out, "%s", json ? json : "[]");
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "application/json; charset=utf-8");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+    free(json);
+}
+
 /**
  * @brief 实时调试信息（/admin/api/debug GET）
  * @param req HTTP 请求对象
@@ -716,6 +858,9 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/admin/api/switch")) { handle_switch(req); return; }
     if (URI_IS("/admin/api/stats") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_stats(req); return; }
     if (URI_IS("/admin/api/stats/reset") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_stats_reset(req); return; }
+    if (URI_IS("/admin/api/history") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_history(req); return; }
+    if (URI_IS("/admin/api/hourly") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_hourly(req); return; }
+    if (URI_IS("/admin/api/daily") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_daily(req); return; }
     if (URI_IS("/admin/api/debug") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_debug(req); return; }
 #undef URI_IS
     send_error_json(req, 404, "not_found", "not found");

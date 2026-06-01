@@ -118,7 +118,7 @@ void stats_request_begin(const char *model, const char *provider, bool stream, s
 
 /* 请求结束 */
 void stats_request_end(const char *model, const char *provider, bool stream, int http_status,
-                       CURLcode curl_code, size_t response_bytes,
+                       CURLcode curl_code, size_t request_bytes, size_t response_bytes,
                        long input_tokens, long output_tokens,
                        double latency_ms);
 
