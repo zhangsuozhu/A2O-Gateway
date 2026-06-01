@@ -1314,12 +1314,14 @@ function renderAggTable(data, timeKey, timeLabel) {
   var agg = {};
   data.forEach(function(row) {
     var k = row[timeKey];
-    if (!agg[k]) agg[k] = { requests:0, success:0, failed:0, input_tokens:0, output_tokens:0, latency_count:0, total_latency_ms:0 };
+    if (!agg[k]) agg[k] = { requests:0, success:0, failed:0, input_tokens:0, output_tokens:0, cache_read_input_tokens:0, cache_creation_input_tokens:0, latency_count:0, total_latency_ms:0 };
     agg[k].requests += row.requests || 0;
     agg[k].success += row.success || 0;
     agg[k].failed += row.failed || 0;
     agg[k].input_tokens += row.input_tokens || 0;
     agg[k].output_tokens += row.output_tokens || 0;
+    agg[k].cache_read_input_tokens += row.cache_read_input_tokens || 0;
+    agg[k].cache_creation_input_tokens += row.cache_creation_input_tokens || 0;
     agg[k].latency_count += row.latency_count || 0;
     agg[k].total_latency_ms += row.total_latency_ms || 0;
   });
@@ -1340,7 +1342,7 @@ function renderAggTable(data, timeKey, timeLabel) {
 
   // 表格
   var html = chartHtml + '<div class="stats-wrap"><table class="stats-table"><thead><tr>';
-  var cols = [timeLabel, '请求数', '成功', '失败', '输入tokens', '输出tokens', '平均延迟(ms)'];
+  var cols = [timeLabel, '请求数', '成功', '失败', '输入tokens', '缓存读', '输出tokens', '缓存写', '平均延迟(ms)'];
   cols.forEach(function(c) { html += '<th' + (c === timeLabel ? '' : ' class="num"') + '>' + c + '</th>'; });
   html += '</tr></thead><tbody>';
   keys.forEach(function(k) {
@@ -1351,7 +1353,9 @@ function renderAggTable(data, timeKey, timeLabel) {
     html += '<td class="num">' + fmtNum(a.success) + '</td>';
     html += '<td class="num">' + fmtNum(a.failed) + '</td>';
     html += '<td class="num">' + fmtNum(a.input_tokens) + '</td>';
+    html += '<td class="num">' + fmtNum(a.cache_read_input_tokens) + '</td>';
     html += '<td class="num">' + fmtNum(a.output_tokens) + '</td>';
+    html += '<td class="num">' + fmtNum(a.cache_creation_input_tokens) + '</td>';
     html += '<td class="num">' + (a.latency_count > 0 ? (a.total_latency_ms / a.latency_count).toFixed(1) : '-') + '</td>';
     html += '</tr>';
   });

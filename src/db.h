@@ -30,16 +30,19 @@ bool db_insert_request(const char *model, const char *provider, bool stream,
 /* 更新小时聚合统计（UPSERT） */
 bool db_update_hourly_stats(const char *hour, const char *model, const char *provider,
                             bool success, long input_tokens, long output_tokens,
+                            long cache_read_input_tokens, long cache_creation_input_tokens,
                             double latency_ms);
 
 /* 更新日聚合统计（UPSERT） */
 bool db_update_daily_stats(const char *day, const char *model, const char *provider,
                            bool success, long input_tokens, long output_tokens,
+                           long cache_read_input_tokens, long cache_creation_input_tokens,
                            double latency_ms);
 
 /* 更新模型累计统计（UPSERT） */
 bool db_update_model_stats(const char *model, const char *provider,
                            bool success, long input_tokens, long output_tokens,
+                           long cache_read_input_tokens, long cache_creation_input_tokens,
                            double latency_ms);
 
 /* 查询请求历史

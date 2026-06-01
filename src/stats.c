@@ -259,9 +259,12 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
                       cache_read_input_tokens, cache_creation_input_tokens,
                       latency_ms,
                       request_bytes, response_bytes, model, "");
-    db_update_hourly_stats(hour_str, model, provider, success, input_tokens, output_tokens, latency_ms);
-    db_update_daily_stats(day_str, model, provider, success, input_tokens, output_tokens, latency_ms);
-    db_update_model_stats(model, provider, success, input_tokens, output_tokens, latency_ms);
+    db_update_hourly_stats(hour_str, model, provider, success, input_tokens, output_tokens,
+                           cache_read_input_tokens, cache_creation_input_tokens, latency_ms);
+    db_update_daily_stats(day_str, model, provider, success, input_tokens, output_tokens,
+                          cache_read_input_tokens, cache_creation_input_tokens, latency_ms);
+    db_update_model_stats(model, provider, success, input_tokens, output_tokens,
+                          cache_read_input_tokens, cache_creation_input_tokens, latency_ms);
 }
 
 static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double window_sec, double uptime) {

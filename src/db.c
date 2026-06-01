@@ -40,6 +40,8 @@ static const char *CREATE_TABLES_SQL =
     "    failed INTEGER DEFAULT 0,"
     "    input_tokens INTEGER DEFAULT 0,"
     "    output_tokens INTEGER DEFAULT 0,"
+    "    cache_read_input_tokens INTEGER DEFAULT 0,"
+    "    cache_creation_input_tokens INTEGER DEFAULT 0,"
     "    total_latency_ms REAL DEFAULT 0,"
     "    latency_count INTEGER DEFAULT 0,"
     "    PRIMARY KEY (hour, model, provider)"
@@ -55,6 +57,8 @@ static const char *CREATE_TABLES_SQL =
     "    failed INTEGER DEFAULT 0,"
     "    input_tokens INTEGER DEFAULT 0,"
     "    output_tokens INTEGER DEFAULT 0,"
+    "    cache_read_input_tokens INTEGER DEFAULT 0,"
+    "    cache_creation_input_tokens INTEGER DEFAULT 0,"
     "    total_latency_ms REAL DEFAULT 0,"
     "    latency_count INTEGER DEFAULT 0,"
     "    PRIMARY KEY (day, model, provider)"
@@ -68,6 +72,8 @@ static const char *CREATE_TABLES_SQL =
     "    total_failed INTEGER DEFAULT 0,"
     "    total_input_tokens INTEGER DEFAULT 0,"
     "    total_output_tokens INTEGER DEFAULT 0,"
+    "    cache_read_input_tokens INTEGER DEFAULT 0,"
+    "    cache_creation_input_tokens INTEGER DEFAULT 0,"
     "    total_latency_ms REAL DEFAULT 0,"
     "    latency_count INTEGER DEFAULT 0,"
     "    min_latency_ms REAL,"
@@ -103,9 +109,15 @@ bool db_init(const char *db_path) {
         return false;
     }
 
-    /* schema 升级：为已存在的 requests 表添加缓存列（失败则忽略，说明列已存在） */
+    /* schema 升级：为已存在的表添加缓存列（失败则忽略，说明列已存在） */
     sqlite3_exec(g_db, "ALTER TABLE requests ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
     sqlite3_exec(g_db, "ALTER TABLE requests ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "ALTER TABLE hourly_stats ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "ALTER TABLE hourly_stats ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "ALTER TABLE daily_stats ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "ALTER TABLE daily_stats ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "ALTER TABLE model_stats ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "ALTER TABLE model_stats ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
 
     free(g_db_path);
     g_db_path = db_path ? strdup(db_path) : strdup("gateway.db");
@@ -181,19 +193,23 @@ bool db_insert_request(const char *model, const char *provider, bool stream,
 
 bool db_update_hourly_stats(const char *hour, const char *model, const char *provider,
                             bool success, long input_tokens, long output_tokens,
+                            long cache_read_input_tokens, long cache_creation_input_tokens,
                             double latency_ms) {
     if (!g_db) return false;
 
     const char *sql =
         "INSERT INTO hourly_stats (hour, model, provider, requests, success, failed,"
-        " input_tokens, output_tokens, total_latency_ms, latency_count)"
-        " VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, 1)"
+        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+        " total_latency_ms, latency_count)"
+        " VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)"
         " ON CONFLICT(hour, model, provider) DO UPDATE SET"
         " requests = requests + 1,"
         " success = success + excluded.success,"
         " failed = failed + excluded.failed,"
         " input_tokens = input_tokens + excluded.input_tokens,"
         " output_tokens = output_tokens + excluded.output_tokens,"
+        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
+        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
         " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
         " latency_count = latency_count + excluded.latency_count;";
 
@@ -210,7 +226,9 @@ bool db_update_hourly_stats(const char *hour, const char *model, const char *pro
     sqlite3_bind_int(stmt, 5, success ? 0 : 1);
     sqlite3_bind_int64(stmt, 6, (sqlite3_int64)input_tokens);
     sqlite3_bind_int64(stmt, 7, (sqlite3_int64)output_tokens);
-    sqlite3_bind_double(stmt, 8, latency_ms > 0 ? latency_ms : 0);
+    sqlite3_bind_int64(stmt, 8, (sqlite3_int64)cache_read_input_tokens);
+    sqlite3_bind_int64(stmt, 9, (sqlite3_int64)cache_creation_input_tokens);
+    sqlite3_bind_double(stmt, 10, latency_ms > 0 ? latency_ms : 0);
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -224,19 +242,23 @@ bool db_update_hourly_stats(const char *hour, const char *model, const char *pro
 
 bool db_update_daily_stats(const char *day, const char *model, const char *provider,
                            bool success, long input_tokens, long output_tokens,
+                           long cache_read_input_tokens, long cache_creation_input_tokens,
                            double latency_ms) {
     if (!g_db) return false;
 
     const char *sql =
         "INSERT INTO daily_stats (day, model, provider, requests, success, failed,"
-        " input_tokens, output_tokens, total_latency_ms, latency_count)"
-        " VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, 1)"
+        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+        " total_latency_ms, latency_count)"
+        " VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1)"
         " ON CONFLICT(day, model, provider) DO UPDATE SET"
         " requests = requests + 1,"
         " success = success + excluded.success,"
         " failed = failed + excluded.failed,"
         " input_tokens = input_tokens + excluded.input_tokens,"
         " output_tokens = output_tokens + excluded.output_tokens,"
+        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
+        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
         " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
         " latency_count = latency_count + excluded.latency_count;";
 
@@ -253,7 +275,9 @@ bool db_update_daily_stats(const char *day, const char *model, const char *provi
     sqlite3_bind_int(stmt, 5, success ? 0 : 1);
     sqlite3_bind_int64(stmt, 6, (sqlite3_int64)input_tokens);
     sqlite3_bind_int64(stmt, 7, (sqlite3_int64)output_tokens);
-    sqlite3_bind_double(stmt, 8, latency_ms > 0 ? latency_ms : 0);
+    sqlite3_bind_int64(stmt, 8, (sqlite3_int64)cache_read_input_tokens);
+    sqlite3_bind_int64(stmt, 9, (sqlite3_int64)cache_creation_input_tokens);
+    sqlite3_bind_double(stmt, 10, latency_ms > 0 ? latency_ms : 0);
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -267,14 +291,16 @@ bool db_update_daily_stats(const char *day, const char *model, const char *provi
 
 bool db_update_model_stats(const char *model, const char *provider,
                            bool success, long input_tokens, long output_tokens,
+                           long cache_read_input_tokens, long cache_creation_input_tokens,
                            double latency_ms) {
     if (!g_db) return false;
 
     const char *sql =
         "INSERT INTO model_stats (model, provider, total_requests, total_success, total_failed,"
-        " total_input_tokens, total_output_tokens, total_latency_ms, latency_count,"
+        " total_input_tokens, total_output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+        " total_latency_ms, latency_count,"
         " min_latency_ms, max_latency_ms, first_seen, last_seen)"
-        " VALUES (?, ?, 1, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)"
+        " VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)"
         " ON CONFLICT(model) DO UPDATE SET"
         " provider = excluded.provider,"
         " total_requests = total_requests + 1,"
@@ -282,6 +308,8 @@ bool db_update_model_stats(const char *model, const char *provider,
         " total_failed = total_failed + excluded.total_failed,"
         " total_input_tokens = total_input_tokens + excluded.total_input_tokens,"
         " total_output_tokens = total_output_tokens + excluded.total_output_tokens,"
+        " cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,"
+        " cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,"
         " total_latency_ms = total_latency_ms + excluded.total_latency_ms,"
         " latency_count = latency_count + excluded.latency_count,"
         " min_latency_ms = CASE WHEN excluded.min_latency_ms IS NOT NULL AND"
@@ -305,11 +333,13 @@ bool db_update_model_stats(const char *model, const char *provider,
     sqlite3_bind_int(stmt, 4, success ? 0 : 1);
     sqlite3_bind_int64(stmt, 5, (sqlite3_int64)input_tokens);
     sqlite3_bind_int64(stmt, 6, (sqlite3_int64)output_tokens);
-    sqlite3_bind_double(stmt, 7, latency_ms > 0 ? latency_ms : 0);
-    sqlite3_bind_double(stmt, 8, latency_ms > 0 ? latency_ms : -1);
-    sqlite3_bind_double(stmt, 9, latency_ms > 0 ? latency_ms : -1);
-    sqlite3_bind_int64(stmt, 10, (sqlite3_int64)now);
-    sqlite3_bind_int64(stmt, 11, (sqlite3_int64)now);
+    sqlite3_bind_int64(stmt, 7, (sqlite3_int64)cache_read_input_tokens);
+    sqlite3_bind_int64(stmt, 8, (sqlite3_int64)cache_creation_input_tokens);
+    sqlite3_bind_double(stmt, 9, latency_ms > 0 ? latency_ms : 0);
+    sqlite3_bind_double(stmt, 10, latency_ms > 0 ? latency_ms : -1);
+    sqlite3_bind_double(stmt, 11, latency_ms > 0 ? latency_ms : -1);
+    sqlite3_bind_int64(stmt, 12, (sqlite3_int64)now);
+    sqlite3_bind_int64(stmt, 13, (sqlite3_int64)now);
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -440,7 +470,8 @@ cJSON *db_query_hourly(const char *model, const char *from_hour, const char *to_
     char sql[1024];
     snprintf(sql, sizeof(sql),
              "SELECT hour, model, provider, requests, success, failed,"
-             " input_tokens, output_tokens, total_latency_ms, latency_count"
+             " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+             " total_latency_ms, latency_count"
              " FROM hourly_stats%s ORDER BY hour;",
              where);
 
@@ -466,8 +497,10 @@ cJSON *db_query_hourly(const char *model, const char *from_hour, const char *to_
         cJSON_AddNumberToObject(obj, "failed", (double)sqlite3_column_int64(stmt, 5));
         cJSON_AddNumberToObject(obj, "input_tokens", (double)sqlite3_column_int64(stmt, 6));
         cJSON_AddNumberToObject(obj, "output_tokens", (double)sqlite3_column_int64(stmt, 7));
-        cJSON_AddNumberToObject(obj, "total_latency_ms", sqlite3_column_double(stmt, 8));
-        cJSON_AddNumberToObject(obj, "latency_count", (double)sqlite3_column_int64(stmt, 9));
+        cJSON_AddNumberToObject(obj, "cache_read_input_tokens", (double)sqlite3_column_int64(stmt, 8));
+        cJSON_AddNumberToObject(obj, "cache_creation_input_tokens", (double)sqlite3_column_int64(stmt, 9));
+        cJSON_AddNumberToObject(obj, "total_latency_ms", sqlite3_column_double(stmt, 10));
+        cJSON_AddNumberToObject(obj, "latency_count", (double)sqlite3_column_int64(stmt, 11));
         cJSON_AddItemToArray(arr, obj);
     }
     sqlite3_finalize(stmt);
@@ -497,7 +530,8 @@ cJSON *db_query_daily(const char *model, const char *from_day, const char *to_da
     char sql[1024];
     snprintf(sql, sizeof(sql),
              "SELECT day, model, provider, requests, success, failed,"
-             " input_tokens, output_tokens, total_latency_ms, latency_count"
+             " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+             " total_latency_ms, latency_count"
              " FROM daily_stats%s ORDER BY day;",
              where);
 
@@ -523,8 +557,10 @@ cJSON *db_query_daily(const char *model, const char *from_day, const char *to_da
         cJSON_AddNumberToObject(obj, "failed", (double)sqlite3_column_int64(stmt, 5));
         cJSON_AddNumberToObject(obj, "input_tokens", (double)sqlite3_column_int64(stmt, 6));
         cJSON_AddNumberToObject(obj, "output_tokens", (double)sqlite3_column_int64(stmt, 7));
-        cJSON_AddNumberToObject(obj, "total_latency_ms", sqlite3_column_double(stmt, 8));
-        cJSON_AddNumberToObject(obj, "latency_count", (double)sqlite3_column_int64(stmt, 9));
+        cJSON_AddNumberToObject(obj, "cache_read_input_tokens", (double)sqlite3_column_int64(stmt, 8));
+        cJSON_AddNumberToObject(obj, "cache_creation_input_tokens", (double)sqlite3_column_int64(stmt, 9));
+        cJSON_AddNumberToObject(obj, "total_latency_ms", sqlite3_column_double(stmt, 10));
+        cJSON_AddNumberToObject(obj, "latency_count", (double)sqlite3_column_int64(stmt, 11));
         cJSON_AddItemToArray(arr, obj);
     }
     sqlite3_finalize(stmt);
