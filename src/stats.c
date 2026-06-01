@@ -299,8 +299,10 @@ static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double window
         uint64_t total_in = entry->input_tokens;
         uint64_t cache_total = entry->cache_read_input_tokens + entry->cache_creation_input_tokens;
         if (total_in < cache_total) total_in = cache_total;
-        double rate = (total_in > 0) ? (double)entry->cache_read_input_tokens / (double)total_in : 0.0;
-        cJSON_AddNumberToObject(obj, "cache_hit_rate", rate);
+        double read_rate = (total_in > 0) ? (double)entry->cache_read_input_tokens / (double)total_in : 0.0;
+        double write_rate = (total_in > 0) ? (double)entry->cache_creation_input_tokens / (double)total_in : 0.0;
+        cJSON_AddNumberToObject(obj, "cache_read_hit_rate", read_rate);
+        cJSON_AddNumberToObject(obj, "cache_write_hit_rate", write_rate);
     }
     cJSON_AddNumberToObject(obj, "first_seen", (double)entry->first_seen);
     cJSON_AddNumberToObject(obj, "last_seen", (double)entry->last_seen);
