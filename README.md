@@ -164,10 +164,13 @@ claude --model qwen-coder
     "ANTHROPIC_AUTH_TOKEN": "cc-local-token",
     "ANTHROPIC_API_KEY": "cc-local-token",
     "ANTHROPIC_MODEL": "qwen-coder",
-    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
+    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+    "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
   }
 }
 ```
+
+> `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` 让新版 Claude Code 通过 `GET /v1/models` 自动发现可用模型列表，避免在客户端硬编码模型 ID。
 
 ## 手工测试
 
@@ -272,6 +275,7 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 | `realtime_print` | 顶层 | string | 实时输出模式：`"false"` 关闭、`"all"` 完整 JSON、`"txt"` 纯文本（仅提取对话内容） |
 | `gateway_api_key` | 顶层 | string | Claude Code 认证凭据 |
 | `admin_password` | 顶层 | string | Web 管理界面登录密码，通过 UI 登录后获取 session |
+| `admin_token` | 顶层 | string | 自动与 `admin_password` 同步的 bearer token，修改密码时自动重新生成 |
 | `worker_threads` | 顶层 | number | 工作线程数，范围 1-8 |
 | `active_model` | 顶层 | string | 默认模型 ID |
 | `models[].id` | 模型 | string | Claude Code 侧使用的模型名（`--model` 参数） |
@@ -285,6 +289,9 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 | `models[].api_mode` | 模型 | string | 模式：默认 `"openai_chat_completions"`（Anthropic→OpenAI 转换）；`"passthrough"` 跳过转换，直接发送 Anthropic 请求体到上游 |
 | `models[].params` | 模型 | object | temperature/top_p/max_tokens 等 |
 | `models[].extra_body` | 模型 | object | 厂商私有参数（如 `enable_search`） |
+| `models[].cache_policy` | 模型 | string | 缓存策略：`"off"`（默认）或 `"auto"`。`"auto"` 自动注入 `cache_control: {type: "ephemeral"}` |
+| `models[].min_cache_tokens` | 模型 | number | 自动缓存注入阈值（token 数），默认 1024 |
+| `models[].prompt_tokens_includes_cache` | 模型 | bool | `true`（默认）表示 `prompt_tokens` 已包含缓存 token。`false` 时网关自行合并 `pt + cr + cc`（如 Moonshot） |
 
 ## API 端点
 

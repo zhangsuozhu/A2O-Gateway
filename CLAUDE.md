@@ -50,6 +50,12 @@ ctest --test-dir build --output-on-failure
 
 Test coverage: `test_convert` tests protocol conversion (Anthropic ↔ OpenAI), `test_stream` tests SSE parsing and streaming conversion, `test_log` tests realtime print text extraction (`rt_extract_text_from_json`), `test_cache_control` tests cache policy injection (`cache_control` block generation).
 
+Test infrastructure:
+- `tests/test_stubs.c` — provides `WORKER_COUNT` as a weak symbol for unit tests that link `config.c` (which references `WORKER_COUNT` from `main.c`). Linked only by `test_cache_control`.
+- `tests/mock_server.c` — a lightweight HTTP server for integration testing (listens on a dynamic port, serves predefined responses). Build target `mock_server`.
+
+Test payloads in `examples/` include load testing (`loadtest-payload.json`) and performance testing (`perf-payload.json`) variants.
+
 ### Debug & Test Commands
 ```bash
 # Realtime JSON print mode (set realtime_print in config to "all" or "txt")
@@ -97,7 +103,7 @@ valgrind --leak-check=full ./build/cc-oai-gateway ./config/gateway.local.json
 
 ## Architecture
 
-This is a C11 gateway that translates Anthropic Messages API ↔ OpenAI Chat Completions protocol. 8 source files + single-file Web UI (approx. 6000+ lines total). Line counts below are approximate.
+This is a C11 gateway that translates Anthropic Messages API ↔ OpenAI Chat Completions protocol. 9 source files + single-file Web UI (approx. 6500+ lines total) + bundled sqlite3 amalgamation. Line counts below are approximate.
 
 ### Data Flow
 
@@ -131,17 +137,19 @@ All three modes record stats / history / cache tokens identically via `stats.c` 
 
 | File | Lines | Responsibility |
 |------|-------|---------------|
-| `types.h` | 491 | Shared structs (membuf_t, app_config_t, stream_state_t, gateway_job, worker_t), inline utilities, extern globals |
-| `main.c` | 163 | Entry point, libevent setup, signal handling, global var declarations |
-| `handlers.c` | 664 | HTTP route dispatch, auth, request lifecycle, admin API |
-| `stream.c` | 765 | SSE streaming parser, chunk-by-chunk conversion, tool stream tracking |
-| `convert.c` | 543 | Bidirectional protocol conversion (Anthropic ↔ OpenAI), URL construction |
-| `worker.c` | 432 | libcurl multi worker thread pool, job queue, CURL easy handle lifecycle (forced HTTP/1.1) |
-| `stats.c` | 354 | Request statistics: per-model breakdown, time windows, latency tracking |
-| `config.c` | 404 | JSON config load/save, masked output, RWLock-protected hot-reload |
-| `db.c` | 354 | SQLite persistence: request history, hourly/daily/model aggregate stats (WAL mode) |
-| `log.c` | 422 | Logging: level filtering, file output, realtime terminal print |
-| `web/admin.html` | 850 | Single-file Web UI for config management (served at /admin) |
+| `types.h` | 533 | Shared structs (membuf_t, app_config_t, stream_state_t, gateway_job, worker_t), inline utilities, extern globals |
+| `main.c` | 330 | Entry point, libevent setup, signal handling, global var declarations |
+| `handlers.c` | 1025 | HTTP route dispatch, auth, request lifecycle, admin API |
+| `stream.c` | 1151 | SSE streaming parser, chunk-by-chunk conversion, tool stream tracking |
+| `convert.c` | 833 | Bidirectional protocol conversion (Anthropic ↔ OpenAI), URL construction |
+| `worker.c` | 742 | libcurl multi worker thread pool, job queue, CURL easy handle lifecycle (forced HTTP/1.1) |
+| `db.c` | 992 | SQLite persistence: request history, hourly/daily/model aggregate stats (WAL mode) |
+| `stats.c` | 503 | Request statistics: per-model breakdown, time windows, latency tracking |
+| `config.c` | 484 | JSON config load/save, masked output, RWLock-protected hot-reload |
+| `log.c` | 452 | Logging: level filtering, file output, realtime terminal print |
+| `db.h` | 79 | SQLite schema constants, INSERT/query function declarations, DB path/reset helpers |
+| `web/admin.html` | ~850 | Single-file Web UI for config & stats management (served at /admin) |
+| `src/sqlite3/sqlite3.c` | bundled | SQLite amalgamation (bundled, not part of project code) |
 
 ### Globals (declared in `main.c`, extern in `types.h`)
 
@@ -221,7 +229,9 @@ OpenAI models like DeepSeek-R1 return `choices[0].delta.reasoning_content` in st
 - **`config/gateway.local.json` is NOT in `.gitignore`** — never `git add` it, or add to `.gitignore` if it may be committed accidentally.
 - API keys in Web UI are masked as `***MASKED***`. The real key is preserved server-side during hot-reload.
 - Never expose `/admin` to the public internet. Use a reverse proxy with IP whitelisting for production.
-- Config file permissions: `chmod 600 config/gateway.local.json`.
+- **Config file permissions**: `chmod 600 config/gateway.local.json`.
+- `admin_token` in config is auto-synced with `admin_password` on login — changing the password invalidates all existing sessions.
+- Session tokens are generated on login (`POST /admin/api/login`) and verified on each subsequent admin API call. Sessions can be destroyed via logout (`POST /admin/api/logout`).
 
 ## Common Tasks
 
@@ -264,6 +274,8 @@ In `handlers.c`, `handle_root()` uses `evhttp_set_cb()` or manual URI dispatch. 
 
 Use `config/gateway.local.json` at runtime (copy from `config/gateway.json`, never commit with real keys). Config hot-reload via admin Web UI -> `PUT /admin/api/config` -> `config_replace_from_json()` swaps the config root under write lock.
 
+> Note: `cc2open` in the repo root (`./cc2open`) is a stale build artifact; use the Makefile to build instead.
+
 ### Model Config Fields
 
 | Field | Required | Description |
@@ -279,6 +291,10 @@ Use `config/gateway.local.json` at runtime (copy from `config/gateway.json`, nev
 | `cache_policy` | no | `"off"` or `"auto"` — auto injects `cache_control: {type: "ephemeral"}` for system prompts above `min_cache_tokens` |
 | `min_cache_tokens` | no | Threshold (tokens) for auto cache injection, default 1024 |
 | `prompt_tokens_includes_cache` | no | `true` (default) = `prompt_tokens` already includes cache hit/creation (OpenAI/Anthropic/DeepSeek). `false` = cache is separate from `prompt_tokens` (Moonshot); gateway will merge `pt + cr + cc` for stats |
+| `api_mode` | no | `"openai_chat_completions"` (default) = Anthropic→OpenAI conversion. `"passthrough"` = skip conversion, forward Anthropic body to `{base_url}/v1/messages` |
+| `interface` | no | Legacy alias for `api_mode`. Both accepted, `api_mode` takes priority |
+| `priority` | no | Numeric priority (0-1000, default 100). Lower = higher priority for model selection |
+| `enabled` | no | Boolean, default `true`. Set `false` to disable a model without removing it from config |
 
 ### Real-time Print Modes
 
