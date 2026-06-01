@@ -23,6 +23,8 @@ static const char *CREATE_TABLES_SQL =
     "    latency_ms REAL,"
     "    request_bytes INTEGER DEFAULT 0,"
     "    response_bytes INTEGER DEFAULT 0,"
+    "    cache_read_input_tokens INTEGER DEFAULT 0,"
+    "    cache_creation_input_tokens INTEGER DEFAULT 0,"
     "    client_model TEXT,"
     "    upstream_url TEXT"
     ");"
@@ -101,6 +103,10 @@ bool db_init(const char *db_path) {
         return false;
     }
 
+    /* schema 升级：为已存在的 requests 表添加缓存列（失败则忽略，说明列已存在） */
+    sqlite3_exec(g_db, "ALTER TABLE requests ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
+    sqlite3_exec(g_db, "ALTER TABLE requests ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0;", NULL, NULL, NULL);
+
     free(g_db_path);
     g_db_path = db_path ? strdup(db_path) : strdup("gateway.db");
     log_msg("INFO", "db_init ok: %s", g_db_path);
@@ -129,15 +135,17 @@ void db_close(void) {
 bool db_insert_request(const char *model, const char *provider, bool stream,
                        int http_status, int curl_code,
                        long input_tokens, long output_tokens,
+                       long cache_read_input_tokens, long cache_creation_input_tokens,
                        double latency_ms, size_t request_bytes, size_t response_bytes,
                        const char *client_model, const char *upstream_url) {
     if (!g_db) return false;
 
     const char *sql = "INSERT INTO requests"
         " (timestamp, model, provider, stream, http_status, curl_code,"
-        " input_tokens, output_tokens, latency_ms, request_bytes, response_bytes,"
+        " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+        " latency_ms, request_bytes, response_bytes,"
         " client_model, upstream_url)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
 
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, NULL) != SQLITE_OK) {
@@ -153,11 +161,13 @@ bool db_insert_request(const char *model, const char *provider, bool stream,
     sqlite3_bind_int(stmt, 6, curl_code);
     sqlite3_bind_int64(stmt, 7, (sqlite3_int64)input_tokens);
     sqlite3_bind_int64(stmt, 8, (sqlite3_int64)output_tokens);
-    sqlite3_bind_double(stmt, 9, latency_ms);
-    sqlite3_bind_int64(stmt, 10, (sqlite3_int64)request_bytes);
-    sqlite3_bind_int64(stmt, 11, (sqlite3_int64)response_bytes);
-    sqlite3_bind_text(stmt, 12, client_model ? client_model : "", -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 13, upstream_url ? upstream_url : "", -1, SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 9, (sqlite3_int64)cache_read_input_tokens);
+    sqlite3_bind_int64(stmt, 10, (sqlite3_int64)cache_creation_input_tokens);
+    sqlite3_bind_double(stmt, 11, latency_ms);
+    sqlite3_bind_int64(stmt, 12, (sqlite3_int64)request_bytes);
+    sqlite3_bind_int64(stmt, 13, (sqlite3_int64)response_bytes);
+    sqlite3_bind_text(stmt, 14, client_model ? client_model : "", -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 15, upstream_url ? upstream_url : "", -1, SQLITE_STATIC);
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -351,7 +361,8 @@ cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, in
     char sql[1024];
     snprintf(sql, sizeof(sql),
              "SELECT timestamp, model, provider, stream, http_status, curl_code,"
-             " input_tokens, output_tokens, latency_ms, request_bytes, response_bytes,"
+             " input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens,"
+             " latency_ms, request_bytes, response_bytes,"
              " client_model, upstream_url"
              " FROM requests%s ORDER BY timestamp DESC LIMIT ? OFFSET ?;",
              where);
@@ -385,12 +396,14 @@ cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, in
         cJSON_AddNumberToObject(obj, "curl_code", sqlite3_column_int(stmt, 5));
         cJSON_AddNumberToObject(obj, "input_tokens", (double)sqlite3_column_int64(stmt, 6));
         cJSON_AddNumberToObject(obj, "output_tokens", (double)sqlite3_column_int64(stmt, 7));
-        cJSON_AddNumberToObject(obj, "latency_ms", sqlite3_column_double(stmt, 8));
-        cJSON_AddNumberToObject(obj, "request_bytes", (double)sqlite3_column_int64(stmt, 9));
-        cJSON_AddNumberToObject(obj, "response_bytes", (double)sqlite3_column_int64(stmt, 10));
-        const char *cm = (const char *)sqlite3_column_text(stmt, 11);
+        cJSON_AddNumberToObject(obj, "cache_read_input_tokens", (double)sqlite3_column_int64(stmt, 8));
+        cJSON_AddNumberToObject(obj, "cache_creation_input_tokens", (double)sqlite3_column_int64(stmt, 9));
+        cJSON_AddNumberToObject(obj, "latency_ms", sqlite3_column_double(stmt, 10));
+        cJSON_AddNumberToObject(obj, "request_bytes", (double)sqlite3_column_int64(stmt, 11));
+        cJSON_AddNumberToObject(obj, "response_bytes", (double)sqlite3_column_int64(stmt, 12));
+        const char *cm = (const char *)sqlite3_column_text(stmt, 13);
         if (cm) cJSON_AddStringToObject(obj, "client_model", cm);
-        const char *uu = (const char *)sqlite3_column_text(stmt, 12);
+        const char *uu = (const char *)sqlite3_column_text(stmt, 14);
         if (uu) cJSON_AddStringToObject(obj, "upstream_url", uu);
         cJSON_AddItemToArray(arr, obj);
     }

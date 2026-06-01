@@ -23,6 +23,7 @@ bool db_reset(void);
 bool db_insert_request(const char *model, const char *provider, bool stream,
                        int http_status, int curl_code,
                        long input_tokens, long output_tokens,
+                       long cache_read_input_tokens, long cache_creation_input_tokens,
                        double latency_ms, size_t request_bytes, size_t response_bytes,
                        const char *client_model, const char *upstream_url);
 

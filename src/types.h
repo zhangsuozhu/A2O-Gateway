@@ -208,6 +208,10 @@ typedef struct stream_state {
     /* 工具流状态数组：并行跟踪多个工具调用 */
     tool_stream_state_t tools[MAX_TOOL_STREAMS];
 
+    /* 单次请求的缓存 token 计数（用于持久化到 request_log） */
+    long cache_read_input_tokens;      /**< 缓存读 token 数 */
+    long cache_creation_input_tokens;  /**< 缓存写（创建）token 数 */
+
     /* 统计防重入标志 */
     bool stats_recorded;     /**< 标记 stats_request_end 是否已调用 */
     bool cache_stats_recorded; /**< 标记透传流式缓存统计是否已调用 */

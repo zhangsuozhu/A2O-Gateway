@@ -1269,7 +1269,7 @@ function renderHistoryTable(result) {
   var currentPage = Math.floor(histOffset / histLimit) + 1;
 
   var html = '<div class="stats-wrap"><table class="stats-table"><thead><tr>';
-  var cols = ['时间', '模型', '厂商', '流式', '状态码', '输入tokens', '输出tokens', '延迟(ms)', '请求大小', '响应大小'];
+  var cols = ['时间', '模型', '厂商', '流式', '状态码', '输入tokens', '缓存读', '输出tokens', '缓存写', '延迟(ms)', '请求大小', '响应大小'];
   cols.forEach(function(c) { html += '<th' + (c === '时间' || c === '模型' || c === '厂商' || c === '流式' ? '' : ' class="num"') + '>' + c + '</th>'; });
   html += '</tr></thead><tbody>';
   data.forEach(function(row) {
@@ -1280,7 +1280,9 @@ function renderHistoryTable(result) {
     html += '<td>' + (row.stream ? '是' : '否') + '</td>';
     html += '<td class="num">' + (row.http_status || '-') + '</td>';
     html += '<td class="num">' + (row.input_tokens || 0) + '</td>';
+    html += '<td class="num">' + (row.cache_read_input_tokens || 0) + '</td>';
     html += '<td class="num">' + (row.output_tokens || 0) + '</td>';
+    html += '<td class="num">' + (row.cache_creation_input_tokens || 0) + '</td>';
     html += '<td class="num">' + (row.latency_ms ? row.latency_ms.toFixed(1) : '-') + '</td>';
     html += '<td class="num">' + formatBytes(row.request_bytes || 0) + '</td>';
     html += '<td class="num">' + formatBytes(row.response_bytes || 0) + '</td>';

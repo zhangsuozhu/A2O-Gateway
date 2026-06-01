@@ -137,6 +137,7 @@ void stats_request_begin(const char *model, const char *provider, bool stream, s
 void stats_request_end(const char *model, const char *provider, bool stream, int http_status,
                        CURLcode curl_code, size_t request_bytes, size_t response_bytes,
                        long input_tokens, long output_tokens,
+                       long cache_read_input_tokens, long cache_creation_input_tokens,
                        double latency_ms) {
     pthread_mutex_lock(&G_STATS.lock);
 
@@ -254,7 +255,9 @@ void stats_request_end(const char *model, const char *provider, bool stream, int
     strftime(day_str, sizeof(day_str), "%Y-%m-%d", tm_info);
 
     db_insert_request(model, provider, stream, http_status, (int)curl_code,
-                      input_tokens, output_tokens, latency_ms,
+                      input_tokens, output_tokens,
+                      cache_read_input_tokens, cache_creation_input_tokens,
+                      latency_ms,
                       request_bytes, response_bytes, model, "");
     db_update_hourly_stats(hour_str, model, provider, success, input_tokens, output_tokens, latency_ms);
     db_update_daily_stats(day_str, model, provider, success, input_tokens, output_tokens, latency_ms);

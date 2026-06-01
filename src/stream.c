@@ -633,6 +633,8 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
                 if (cache_creation < 0) cache_creation = 0;
             }
         }
+        job->stream_state.cache_read_input_tokens = cache_read;
+        job->stream_state.cache_creation_input_tokens = cache_creation;
         if (cache_read > 0 || cache_creation > 0) {
             const char *m = job->upstream_model ? job->upstream_model : job->client_model;
             const char *p = job->provider_name ? job->provider_name : "unknown";
@@ -725,6 +727,8 @@ static void extract_anthropic_cache_stats(gateway_job_t *job, cJSON *usage) {
     }
     long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
     if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
+    job->stream_state.cache_read_input_tokens = cr;
+    job->stream_state.cache_creation_input_tokens = cc;
     const char *m = job->upstream_model ? job->upstream_model : job->client_model;
     const char *p = job->provider_name ? job->provider_name : "unknown";
     if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);

@@ -160,6 +160,8 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                             }
                             long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
                             if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
+                            job->stream_state.cache_read_input_tokens = cr;
+                            job->stream_state.cache_creation_input_tokens = cc;
                             const char *m = job->upstream_model ? job->upstream_model : job->client_model;
                             const char *p = job->provider_name ? job->provider_name : "unknown";
                             if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
@@ -187,6 +189,8 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         }
                         long cc = json_get_long(u, "cache_creation_input_tokens", 0);
                         if (cc == 0) cc = json_get_long(u, "prompt_cache_miss_tokens", 0);
+                        job->stream_state.cache_read_input_tokens = cr;
+                        job->stream_state.cache_creation_input_tokens = cc;
                         const char *m = job->upstream_model ? job->upstream_model : job->client_model;
                         const char *p = job->provider_name ? job->provider_name : "unknown";
                         if (cr > 0) stats_record_cache_read(m, p, (unsigned long)cr);
@@ -254,7 +258,9 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     size_t req_bytes = job->request_body ? strlen(job->request_body) : 0;
 
     stats_request_end(job->upstream_model, job->provider_name, false, code_out == 200 ? 200 : (job->upstream_status > 0 ? (int)job->upstream_status : 502),
-                      rc, req_bytes, job->upstream_body.len, input_tokens, output_tokens, latency_ms);
+                      rc, req_bytes, job->upstream_body.len, input_tokens, output_tokens,
+                      job->stream_state.cache_read_input_tokens, job->stream_state.cache_creation_input_tokens,
+                      latency_ms);
 }
 
 /**
@@ -301,7 +307,9 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
 
     stats_request_end(job->upstream_model, job->provider_name, true, http_status, rc,
                       req_bytes, job->upstream_body.len,
-                      job->stream_state.prompt_tokens, job->stream_state.completion_tokens, latency_ms);
+                      job->stream_state.prompt_tokens, job->stream_state.completion_tokens,
+                      job->stream_state.cache_read_input_tokens, job->stream_state.cache_creation_input_tokens,
+                      latency_ms);
     job->stream_state.stats_recorded = true;
 }
 

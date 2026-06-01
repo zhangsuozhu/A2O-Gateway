@@ -125,6 +125,7 @@ void stats_request_begin(const char *model, const char *provider, bool stream, s
 void stats_request_end(const char *model, const char *provider, bool stream, int http_status,
                        CURLcode curl_code, size_t request_bytes, size_t response_bytes,
                        long input_tokens, long output_tokens,
+                       long cache_read_input_tokens, long cache_creation_input_tokens,
                        double latency_ms);
 
 /* 获取统计 JSON（调用者负责 free） */
