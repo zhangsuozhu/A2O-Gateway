@@ -253,36 +253,6 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     double latency_ms = (end_time.tv_sec - job->start_time.tv_sec) * 1000.0 + (end_time.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
     size_t req_bytes = job->request_body ? strlen(job->request_body) : 0;
 
-    /* 若上游未返回 usage 或返回 0，用请求/响应体长度做粗略估算（4 字节/token） */
-    if (input_tokens <= 0 && req_bytes > 0) {
-        input_tokens = (long)(req_bytes / 4);
-        log_msg("INFO", "TOK_EST model=%s input_tokens=0, fallback_estimate=%ld (req_bytes=%zu)",
-                job->client_model, input_tokens, req_bytes);
-    }
-    if (output_tokens <= 0 && json_out) {
-        cJSON *resp = cJSON_Parse(json_out);
-        if (resp) {
-            cJSON *content = cJSON_GetObjectItemCaseSensitive(resp, "content");
-            if (cJSON_IsArray(content)) {
-                size_t text_len = 0;
-                cJSON *block;
-                cJSON_ArrayForEach(block, content) {
-                    const char *type = json_get_str(block, "type");
-                    if (type && strcmp(type, "text") == 0) {
-                        const char *text = json_get_str(block, "text");
-                        if (text) text_len += strlen(text);
-                    }
-                }
-                if (text_len > 0) {
-                    output_tokens = (long)(text_len / 4);
-                    log_msg("INFO", "TOK_EST model=%s output_tokens=0, fallback_estimate=%ld (text_len=%zu)",
-                            job->client_model, output_tokens, text_len);
-                }
-            }
-            cJSON_Delete(resp);
-        }
-    }
-
     stats_request_end(job->upstream_model, job->provider_name, false, code_out == 200 ? 200 : (job->upstream_status > 0 ? (int)job->upstream_status : 502),
                       rc, req_bytes, job->upstream_body.len, input_tokens, output_tokens, latency_ms);
 }
@@ -328,21 +298,6 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
     int http_status = (rc == CURLE_OK && job->upstream_status < 400) ? 200 :
                       (job->upstream_status > 0 ? (int)job->upstream_status : 502);
     size_t req_bytes = job->request_body ? strlen(job->request_body) : 0;
-
-    /* 若上游未返回 usage 或返回 0，用请求/响应体长度做粗略估算（4 字节/token） */
-    if (job->stream_state.prompt_tokens <= 0 && req_bytes > 0) {
-        job->stream_state.prompt_tokens = (long)(req_bytes / 4);
-        log_msg("INFO", "TOK_EST model=%s prompt_tokens=0, fallback_estimate=%ld (req_bytes=%zu)",
-                job->client_model, job->stream_state.prompt_tokens, req_bytes);
-    }
-    if (job->stream_state.completion_tokens <= 0 && job->stream_state.response_text) {
-        size_t text_len = strlen(job->stream_state.response_text);
-        if (text_len > 0) {
-            job->stream_state.completion_tokens = (long)(text_len / 4);
-            log_msg("INFO", "TOK_EST model=%s completion_tokens=0, fallback_estimate=%ld (text_len=%zu)",
-                    job->client_model, job->stream_state.completion_tokens, text_len);
-        }
-    }
 
     stats_request_end(job->upstream_model, job->provider_name, true, http_status, rc,
                       req_bytes, job->upstream_body.len,
