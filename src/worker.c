@@ -84,6 +84,10 @@ static void deferred_job_free(evutil_socket_t fd, short what, void *arg) {
  *       并通过 send_mu 互斥锁保护写入；最终发送动作发生在主线程。
  */
 static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
+    struct timespec ts0;
+    clock_gettime(CLOCK_MONOTONIC, &ts0);
+    double worker_total_ms = (ts0.tv_sec - job->start_time.tv_sec) * 1000.0 + (ts0.tv_nsec - job->start_time.tv_nsec) / 1000000.0;
+    log_msg("INFO", "WORKER_RECV model=%s worker_latency=%.2fms", job->client_model, worker_total_ms);
     char *json_out = NULL;
     int code_out = 200;
     long input_tokens = 0, output_tokens = 0;
@@ -192,8 +196,11 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                         long cc = json_get_long(u, "cache_creation_input_tokens", 0);
                         if (cc == 0) cc = json_get_long(u, "prompt_cache_miss_tokens", 0);
                         /* provider 的 prompt_tokens 不包含缓存 tokens，需合并 */
+                        log_msg("DEBUG", "CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
+                                job->client_model, job->prompt_tokens_includes_cache ? "true" : "false", pt, cr, cc);
                         if (!job->prompt_tokens_includes_cache && pt > 0) {
                             pt = pt + cr + cc;
+                            log_msg("DEBUG", "CACHE_FIX model=%s pt_after=%ld", job->client_model, pt);
                         }
                         input_tokens = pt;
                         job->stream_state.cache_read_input_tokens = cr;
@@ -247,6 +254,13 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
     pthread_mutex_unlock(&job->send_mu);
     event_base_once(BASE, -1, EV_TIMEOUT, deferred_send, job, NULL);
     job->response_sent = true;
+
+    {
+        struct timespec ts1;
+        clock_gettime(CLOCK_MONOTONIC, &ts1);
+        double resp_ms = (ts1.tv_sec - ts0.tv_sec) * 1000.0 + (ts1.tv_nsec - ts0.tv_nsec) / 1000000.0;
+        log_msg("INFO", "WORKER_DONE model=%s resp_process=%.2fms", job->client_model, resp_ms);
+    }
 
     rt_print("[RES] model=%s type=nonstream status=%d upstream_status=%ld prompt_tokens=%ld completion_tokens=%ld",
         job->client_model, code_out, job->upstream_status, input_tokens, output_tokens);
@@ -335,12 +349,17 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
  *   - HTTPHEADER: 包含 Content-Type、Accept 以及 Authorization Bearer token。
  */
 static void worker_add_easy(worker_t *w, gateway_job_t *job) {
+    struct timespec t0;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     job->job_state = JOB_SENDING;
     job->active_next = NULL;
     if (w->active_tail) w->active_tail->active_next = job;
     else w->active_head = job;
     w->active_tail = job;
     job->easy = curl_easy_init();
+    { struct timespec t1; clock_gettime(CLOCK_MONOTONIC, &t1);
+      double ms = (t1.tv_sec - t0.tv_sec)*1000.0 + (t1.tv_nsec - t0.tv_nsec)/1000000.0;
+      if (ms > 5) log_msg("WARN", "CURL_INIT_SLOW model=%s %.2fms", job->client_model, ms); }
     curl_easy_setopt(job->easy, CURLOPT_URL, job->upstream_url);
     curl_easy_setopt(job->easy, CURLOPT_POST, 1L);
     curl_easy_setopt(job->easy, CURLOPT_POSTFIELDS, job->request_body);

@@ -612,8 +612,11 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
         cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
         if (cache_creation == 0) cache_creation = json_get_long(usage, "prompt_cache_miss_tokens", 0);
         /* provider 的 prompt_tokens 不包含缓存 tokens，需合并 */
+        log_msg("DEBUG", "STREAM_CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
+                job->client_model, job->prompt_tokens_includes_cache ? "true" : "false", pt, cache_read, cache_creation);
         if (!job->prompt_tokens_includes_cache && pt > 0) {
             pt = pt + cache_read + cache_creation;
+            log_msg("DEBUG", "STREAM_CACHE_FIX model=%s pt_after=%ld", job->client_model, pt);
         }
         if (pt > 0) {
             job->stream_state.prompt_tokens = pt;
