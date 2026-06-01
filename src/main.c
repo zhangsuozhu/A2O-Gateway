@@ -292,6 +292,7 @@ int main(int argc, char **argv) {
 
     workers_start();
     BASE = event_base_new();
+    event_base_priority_init(BASE, 1);
     HTTP = evhttp_new(BASE);
     evhttp_set_allowed_methods(HTTP, EVHTTP_REQ_GET | EVHTTP_REQ_POST | EVHTTP_REQ_PUT | EVHTTP_REQ_OPTIONS);
     evhttp_set_gencb(HTTP, handle_root, NULL);

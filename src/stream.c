@@ -598,8 +598,10 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
         long ct = json_get_long(usage, "completion_tokens", -1);
         /* 提示词缓存：跨 provider 字段名兼容
          * Anthropic: cache_read_input_tokens, cache_creation_input_tokens
-         * DeepSeek:  prompt_cache_hit_tokens,  prompt_cache_miss_tokens
-         * OpenAI/Moonshot: usage.prompt_tokens_details.cached_tokens */
+         * DeepSeek:  prompt_cache_hit_tokens
+         * OpenAI/Moonshot: usage.prompt_tokens_details.cached_tokens
+         * 注意：prompt_cache_miss_tokens 是 prompt_tokens 的子集（未命中部分），
+         * 不是 cache_creation，不应映射到 cache_creation_input_tokens */
         long cache_read = 0, cache_creation = 0;
         cache_read = json_get_long(usage, "cache_read_input_tokens", 0);
         if (cache_read == 0) cache_read = json_get_long(usage, "prompt_cache_hit_tokens", 0);
@@ -610,7 +612,6 @@ void handle_openai_stream_json(gateway_job_t *job, const char *json) {
             }
         }
         cache_creation = json_get_long(usage, "cache_creation_input_tokens", 0);
-        if (cache_creation == 0) cache_creation = json_get_long(usage, "prompt_cache_miss_tokens", 0);
         /* provider 的 prompt_tokens 不包含缓存 tokens，需合并 */
         log_msg("DEBUG", "STREAM_CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
                 job->client_model, job->prompt_tokens_includes_cache ? "true" : "false", pt, cache_read, cache_creation);
@@ -719,7 +720,6 @@ static void extract_anthropic_cache_stats(gateway_job_t *job, cJSON *usage) {
         }
     }
     long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
-    if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
     job->stream_state.cache_read_input_tokens = cr;
     job->stream_state.cache_creation_input_tokens = cc;
     const char *m = job->upstream_model ? job->upstream_model : job->client_model;
@@ -761,7 +761,6 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
             if (cJSON_IsObject(d)) cr = json_get_long(d, "cached_tokens", 0);
         }
         long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
-        if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
         log_msg("DEBUG", "STREAM_CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
                 job->client_model, job->prompt_tokens_includes_cache ? "true" : "false",
                 job->stream_state.prompt_tokens, cr, cc);
@@ -779,13 +778,26 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
             if (cc > 0) stats_record_cache_creation(m, p, (unsigned long)cc);
         }
     }
-    /* message_start 事件的 usage 嵌套在 message 对象内 */
+    /* message_start 事件的 usage 嵌套在 message 对象内
+     * 注意：Anthropic 协议中 input_tokens 不包含 cache_read_input_tokens，
+     * 因此需在此处也应用 prompt_tokens_includes_cache 修正 */
     cJSON *msg = cJSON_GetObjectItemCaseSensitive(root, "message");
     if (cJSON_IsObject(msg)) {
         cJSON *msg_usage = cJSON_GetObjectItemCaseSensitive(msg, "usage");
         if (cJSON_IsObject(msg_usage)) {
             long in_tok = json_get_long(msg_usage, "input_tokens", -1);
             long out_tok = json_get_long(msg_usage, "output_tokens", -1);
+            if (in_tok < 0) in_tok = json_get_long(msg_usage, "prompt_tokens", -1);
+            if (out_tok < 0) out_tok = json_get_long(msg_usage, "completion_tokens", -1);
+            /* 先提取缓存统计，再根据 includes_cache 口径修正 prompt_tokens */
+            extract_anthropic_cache_stats(job, msg_usage);
+            log_msg("DEBUG", "STREAM_CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
+                    job->client_model, job->prompt_tokens_includes_cache ? "true" : "false",
+                    in_tok, job->stream_state.cache_read_input_tokens, job->stream_state.cache_creation_input_tokens);
+            if (!job->prompt_tokens_includes_cache && in_tok > 0) {
+                in_tok = in_tok + job->stream_state.cache_read_input_tokens + job->stream_state.cache_creation_input_tokens;
+                log_msg("DEBUG", "STREAM_CACHE_FIX model=%s pt_after=%ld", job->client_model, in_tok);
+            }
             if (in_tok >= 0) {
                 job->stream_state.prompt_tokens = in_tok;
                 log_msg("DEBUG", "ANTH_USAGE model=%s msg.input_tokens=%ld", job->client_model, in_tok);
@@ -794,7 +806,6 @@ static void extract_anthropic_usage(gateway_job_t *job, const char *json) {
                 job->stream_state.completion_tokens = out_tok;
                 log_msg("DEBUG", "ANTH_USAGE model=%s msg.output_tokens=%ld", job->client_model, out_tok);
             }
-            extract_anthropic_cache_stats(job, msg_usage);
         }
     }
     cJSON_Delete(root);
@@ -972,6 +983,7 @@ size_t curl_header_cb(char *buffer, size_t size, size_t nitems, void *userdata) 
 void deferred_send(evutil_socket_t fd, short what, void *arg) {
     (void)fd; (void)what;
     gateway_job_t *job = arg;
+
     if (!job || !job->client_req) return;
     pthread_mutex_lock(&job->send_mu);
     struct evbuffer *buf = job->send_buf;
@@ -1022,3 +1034,4 @@ void deferred_send(evutil_socket_t fd, short what, void *arg) {
         job->response_sent = true;
     }
 }
+

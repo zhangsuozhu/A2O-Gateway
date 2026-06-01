@@ -105,16 +105,15 @@ int config_get_min_cache_tokens(const cJSON *model_cfg);
 
 /**
  * config_get_prompt_tokens_includes_cache() — 读取模型配置中的 usage 统计口径
- * @param model_cfg: 单个模型配置 cJSON 对象
- * @return: true= prompt_tokens 已包含缓存 tokens（默认，OpenAI/Anthropic/DeepSeek）
- *          false= prompt_tokens 与缓存分开统计（Moonshot）
+ * @param model_cfg:   单个模型配置 cJSON 对象
+ * @param default_val: 字段未显式设置时的默认值
+ * @return: true= prompt_tokens 已包含缓存 tokens
+ *          false= prompt_tokens 与缓存分开统计
  *
- * 原理说明：
- * - OpenAI/Anthropic/DeepSeek 的 prompt_tokens / input_tokens 是总输入 token 数，
- *   已包含缓存命中/创建部分，无需修正。
- * - Moonshot 的 prompt_tokens 仅统计非缓存部分，cached_tokens 额外单列，
- *   需将 prompt_tokens + cache_read + cache_creation 才能得到真实总输入。
+ * 默认值选择：
+ * - 非透传（OpenAI 格式）: true（DeepSeek/OpenAI 的 prompt_tokens 已含缓存）
+ * - 透传（Anthropic 格式）: false（Anthropic 的 input_tokens 不含 cache_read_input_tokens）
  */
-bool config_get_prompt_tokens_includes_cache(const cJSON *model_cfg);
+bool config_get_prompt_tokens_includes_cache(const cJSON *model_cfg, bool default_val);
 
 #endif

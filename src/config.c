@@ -476,10 +476,10 @@ int config_get_min_cache_tokens(const cJSON *model_cfg) {
     return v > 0 ? v : 1024;
 }
 
-bool config_get_prompt_tokens_includes_cache(const cJSON *model_cfg) {
-    if (!model_cfg) return true;
+bool config_get_prompt_tokens_includes_cache(const cJSON *model_cfg, bool default_val) {
+    if (!model_cfg) return default_val;
     const cJSON *n = cJSON_GetObjectItemCaseSensitive(model_cfg, "prompt_tokens_includes_cache");
     if (cJSON_IsTrue(n)) return true;
     if (cJSON_IsFalse(n)) return false;
-    return true;
+    return default_val;
 }

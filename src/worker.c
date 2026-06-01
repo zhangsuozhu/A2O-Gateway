@@ -167,12 +167,11 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                                 }
                             }
                             long cc = json_get_long(usage, "cache_creation_input_tokens", 0);
-                            if (cc == 0) cc = json_get_long(usage, "prompt_cache_miss_tokens", 0);
                             log_msg("DEBUG", "PASS_CACHE_FIX model=%s includes=%s input_before=%ld pt=%ld cr=%ld cc=%ld",
                                     job->client_model, job->prompt_tokens_includes_cache ? "true" : "false", input_tokens, pt, cr, cc);
-                            /* 如果上游返回 OpenAI 格式且 prompt_tokens 不包含缓存，需修正 */
-                            if (pt > 0 && !job->prompt_tokens_includes_cache) {
-                                input_tokens = pt + cr + cc;
+                            /* 如果 upstream 的 prompt_tokens/input_tokens 不包含缓存，需修正 */
+                            if (!job->prompt_tokens_includes_cache && input_tokens > 0) {
+                                input_tokens = input_tokens + cr + cc;
                                 log_msg("DEBUG", "PASS_CACHE_FIX model=%s input_after=%ld", job->client_model, input_tokens);
                             }
                             job->stream_state.cache_read_input_tokens = cr;
@@ -205,7 +204,6 @@ static void complete_nonstream_job(gateway_job_t *job, CURLcode rc) {
                             }
                         }
                         long cc = json_get_long(u, "cache_creation_input_tokens", 0);
-                        if (cc == 0) cc = json_get_long(u, "prompt_cache_miss_tokens", 0);
                         /* provider 的 prompt_tokens 不包含缓存 tokens，需合并 */
                         log_msg("DEBUG", "CACHE_FIX model=%s includes=%s pt_before=%ld cr=%ld cc=%ld",
                                 job->client_model, job->prompt_tokens_includes_cache ? "true" : "false", pt, cr, cc);
