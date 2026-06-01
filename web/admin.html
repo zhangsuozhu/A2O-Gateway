@@ -573,6 +573,13 @@ function createModel(m, i) {
   html += '  <div><label>Stop（逗号分隔）</label><input class="fp" data-idx="' + i + '" data-k="stop" value="' + escAttr(stopVal) + '" placeholder="如: Human:, Assistant:" /></div>';
   html += '</div>';
 
+  // 提示词缓存
+  html += '<div class="g3" style="margin-bottom:5px">';
+  html += '  <div><label>缓存策略</label><select class="fi" data-idx="' + i + '" data-k="cache_policy"><option value="off"' + (m.cache_policy !== 'auto' ? ' selected' : '') + '>off（关闭）</option><option value="auto"' + (m.cache_policy === 'auto' ? ' selected' : '') + '>auto（自动注入）</option></select></div>';
+  html += '  <div><label>缓存阈值（tokens）</label><input class="fi" data-idx="' + i + '" data-k="min_cache_tokens" type="number" step="1" min="0" value="' + (m.min_cache_tokens || '1024') + '" placeholder="1024" /></div>';
+  html += '  <div></div>';
+  html += '</div>';
+
   // extra_body
   html += '<div><label style="font-weight:400;text-transform:none">extra_body JSON（厂商扩展）</label>';
   html += '<textarea class="fi" data-idx="' + i + '" data-k="extra_body" rows="2" placeholder=\'{"enable_search":true}\'>' + esc(JSON.stringify(m.extra_body || {}, null, 2)) + '</textarea></div>';
@@ -598,6 +605,7 @@ function collectOne(i) {
     var k = el.getAttribute('data-k');
     if (k === 'enabled') m[k] = el.value === 'true';
     else if (k === 'priority') m[k] = Number(el.value);
+    else if (k === 'min_cache_tokens') m[k] = Number(el.value) || 1024;
     else if (k === 'extra_body') { try { m[k] = el.value.trim() ? JSON.parse(el.value) : {}; } catch(e) {} }
     else m[k] = el.value;
   }
