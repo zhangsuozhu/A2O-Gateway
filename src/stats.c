@@ -294,7 +294,11 @@ static cJSON *model_entry_to_json(const model_stat_entry_t *entry, double window
     cJSON_AddNumberToObject(obj, "cache_read_input_tokens", (double)entry->cache_read_input_tokens);
     cJSON_AddNumberToObject(obj, "cache_creation_input_tokens", (double)entry->cache_creation_input_tokens);
     {
-        uint64_t total_in = entry->cache_read_input_tokens + entry->cache_creation_input_tokens + entry->input_tokens;
+        /* input_tokens 通常已包含 cache tokens（Anthropic/DeepSeek/OpenAI 均如此），
+         * 避免重复累加；若 input_tokens 为 0（无 usage），fallback 到 cache tokens 之和 */
+        uint64_t total_in = entry->input_tokens;
+        uint64_t cache_total = entry->cache_read_input_tokens + entry->cache_creation_input_tokens;
+        if (total_in < cache_total) total_in = cache_total;
         double rate = (total_in > 0) ? (double)entry->cache_read_input_tokens / (double)total_in : 0.0;
         cJSON_AddNumberToObject(obj, "cache_hit_rate", rate);
     }

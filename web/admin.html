@@ -64,7 +64,7 @@
     #loaded{display:none}
     .tab-btn{position:relative}
     .tab-btn.active{color:#fff;border-color:#3b82f6;background:rgba(59,130,246,.1)}
-    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}.cache-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
     .stat-card{background:#0e1729;border:1px solid #1e2d4a;border-radius:8px;padding:14px}
     .stat-card .label{font-size:11px;color:#8899b4;margin-bottom:4px}
     .stat-card .value{font-size:20px;font-weight:700;color:#e2e8f0}
@@ -236,7 +236,7 @@
 
       <div class="card">
         <h2>💰 提示词缓存</h2>
-        <div class="stats-grid" id="cacheOverview">
+        <div class="cache-grid" id="cacheOverview">
           <div class="stat-card"><div class="label">缓存读 tokens</div><div class="value" id="statCacheRead">-</div></div>
           <div class="stat-card"><div class="label">缓存写 tokens</div><div class="value" id="statCacheCreation">-</div></div>
           <div class="stat-card"><div class="label">缓存命中率</div><div class="value" id="statCacheHitRate">-</div></div>
@@ -397,7 +397,7 @@ async function doLogin() {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({password: pwd})
-    });
+  });
     var data = await r.json();
     if (data.ok && data.token) {
       sessionToken = data.token;
@@ -406,10 +406,10 @@ async function doLogin() {
       $('loginPwd').value = '';
       checkLogin();
       init();
-    } else {
+  } else {
       $('loginErr').textContent = data.error && data.error.message ? data.error.message : '密码错误';
       $('loginErr').style.display = '';
-    }
+  }
   } catch(e) {
     $('loginErr').textContent = '登录失败: ' + (e.message || String(e));
     $('loginErr').style.display = '';
@@ -421,7 +421,7 @@ async function doLogout() {
     await fetch('/admin/api/logout', {
       method: 'POST',
       headers: {'x-session-token': sessionToken}
-    });
+  });
   }
   sessionToken = '';
   localStorage.removeItem('admin_session');
@@ -458,7 +458,7 @@ async function init() {
   try {
     var r = await fetch('/admin/api/config', {headers: apiHeaders()});
     if (!r.ok) {
-      if (r.status === 401) {
+    if (r.status === 401) {
         sessionToken = '';
         localStorage.removeItem('admin_session');
         checkLogin();
@@ -467,7 +467,7 @@ async function init() {
       var text = await r.text();
       showError('HTTP ' + r.status + ': ' + text);
       return;
-    }
+  }
     cfg = await r.json();
     render();
     $('loading').style.display = 'none';
@@ -520,6 +520,24 @@ function escAttr(v) {
   return esc(v);
 }
 
+function fmtUpstreamUrl(base_url, endpoint, api_mode) {
+  if (endpoint && endpoint.trim()) return endpoint.trim();
+  var raw = base_url || '';
+  while (raw.length > 0 && raw[raw.length - 1] === '/') raw = raw.slice(0, -1);
+  var suffix = (api_mode === 'passthrough') ? '/v1/messages' : '/chat/completions';
+  return raw + suffix;
+}
+
+function updateUrlHint(i) {
+  var hintEl = document.getElementById('url-hint-' + i);
+  if (!hintEl) return;
+  var baseEl = document.querySelector('.fi[data-idx="' + i + '"][data-k="base_url"]');
+  var epEl = document.querySelector('.fi[data-idx="' + i + '"][data-k="endpoint"]');
+  var modeEl = document.querySelector('.fi[data-idx="' + i + '"][data-k="api_mode"]');
+  var url = fmtUpstreamUrl(baseEl ? baseEl.value : '', epEl ? epEl.value : '', modeEl ? modeEl.value : '');
+  hintEl.textContent = '→ ' + url;
+}
+
 function createModel(m, i) {
   var active = (m.id === cfg.active_model);
   var en = (m.enabled !== false);
@@ -560,6 +578,7 @@ function createModel(m, i) {
   html += '  <div><label>API 模式</label><select class="fi" data-idx="' + i + '" data-k="api_mode"><option value=""' + (m.api_mode ? '' : ' selected') + '>OpenAI 兼容</option><option value="passthrough"' + (m.api_mode === 'passthrough' ? ' selected' : '') + '>Anthropic 透传</option></select></div>';
   html += '  <div><label>API Key</label><input class="fi" data-idx="' + i + '" data-k="api_key" value="' + escAttr(m.api_key || '') + '" type="text" style="font-family:monospace" /></div>';
   html += '</div>';
+  html += '<div style="font-size:11px;color:#8b9dc3;margin-bottom:6px" id="url-hint-' + i + '">\u2192 ' + escAttr(fmtUpstreamUrl(m.base_url || '', m.endpoint || '', m.api_mode || '')) + '</div>';
 
   // 参数
   html += '<div class="g2" style="margin-bottom:5px">';
@@ -592,6 +611,15 @@ function createModel(m, i) {
     inputs[j].addEventListener('change', function() { collect(); markDirty(); });
     inputs[j].addEventListener('input', function() { markDirty(); });
   }
+
+  // URL 预览实时更新
+  (function(idx) {
+    var urlFields = div.querySelectorAll('.fi[data-k="base_url"], .fi[data-k="endpoint"], .fi[data-k="api_mode"]');
+    for (var k = 0; k < urlFields.length; k++) {
+      urlFields[k].addEventListener('input', function() { updateUrlHint(idx); });
+      urlFields[k].addEventListener('change', function() { updateUrlHint(idx); });
+    }
+  })(i);
 
   return div;
 }
@@ -731,14 +759,14 @@ async function confirmPwd() {
       method: 'POST',
       headers: apiHeaders(),
       body: JSON.stringify({old_password: old, new_password: pw})
-    });
+  });
     var data = await r.json();
     if (data.ok) {
       hidePwdModal();
       toast('✅ 密码已修改');
-    } else {
+  } else {
       toast(data.error && data.error.message ? data.error.message : '修改失败', true);
-    }
+  }
   } catch(e) { toast('修改失败: ' + (e.message || String(e)), true); }
 }
 
@@ -879,11 +907,11 @@ document.addEventListener('visibilitychange', function() {
     if (currentTab === 'realtime' && !rtTimer) {
       loadRealtime();
       rtTimer = setInterval(loadRealtime, 1000);
-    }
+  }
     if (currentTab === 'stats' && !statsTimer) {
       loadStats();
       statsTimer = setInterval(loadStats, 5000);
-    }
+  }
   }
 });
 
@@ -954,7 +982,7 @@ function renderRealtime(data) {
         var elapsed_cls = elapsed_s > 10 ? 'stalled' : '';
         html += '<div class="job-item"><span><span class="model">' + esc(j.provider || '?') + ': ' + esc(j.upstream_model || '?') + '</span> <span class="meta">' + (j.stream ? '流式' : '非流式') + '</span></span><span class="meta elapsed' + (elapsed_cls ? ' stalled' : '') + '">已等 ' + elapsed_s.toFixed(1) + 's</span></div>';
       }
-    }
+  }
 
     if (active.length > 0) {
       html += '<div style="font-size:11px;color:#64748b;margin-bottom:4px">活跃任务：</div>';
@@ -964,7 +992,7 @@ function renderRealtime(data) {
         var state_cls = a.state === '等回复' ? 'waiting' : a.state === '发送中' ? 'sending' : 'receiving';
         html += '<div class="job-item"><span><span class="model">' + esc(a.provider || '?') + ': ' + esc(a.upstream_model || '?') + '</span> <span class="pill ' + state_cls + '">' + esc(a.state) + '</span></span><span class="meta elapsed">已 ' + elapsed_s.toFixed(1) + 's</span></div>';
       }
-    }
+  }
 
     html += '</div>';
     box.innerHTML += html;
@@ -1018,7 +1046,7 @@ async function loadStats() {
       var t = await r.text();
       renderStatsError('加载失败: HTTP ' + r.status + ' ' + t);
       return;
-    }
+  }
     var data = await r.json();
     renderStats(data);
   } catch (e) {
@@ -1067,7 +1095,7 @@ function renderStats(data) {
     totalCacheRead     += (models[j].cache_read_input_tokens     || 0);
     totalCacheCreation += (models[j].cache_creation_input_tokens || 0);
   }
-  var totalIn = (g.total_input_tokens || 0) + totalCacheRead + totalCacheCreation;
+  var totalIn = Math.max(g.total_input_tokens || 0, totalCacheRead + totalCacheCreation);
   var hitRate = totalIn > 0 ? totalCacheRead / totalIn : 0;
   $('statCacheRead').textContent     = fmtNum(totalCacheRead);
   $('statCacheCreation').textContent = fmtNum(totalCacheCreation);
@@ -1097,9 +1125,9 @@ function renderStats(data) {
         '<td class="num">' + fmtMs(m.max_latency_ms) + '</td>' +
         '<td class="num">' + fmtNum(m.cache_read_input_tokens || 0) + '</td>' +
         '<td class="num">' + fmtNum(m.cache_creation_input_tokens || 0) + '</td>' +
-        '<td class="num">' + fmtPct(m.cache_hit_rate || 0) + '</td>';
+        '<td class="num">' + fmtPct(m.cache_hit_rate || 0, 1) + '</td>';
       tbody.appendChild(tr);
-    }
+  }
   }
 
   // 时间窗口图表
@@ -1109,8 +1137,8 @@ function renderStats(data) {
   } else {
     var maxVal = 0;
     for (var i = 0; i < windows.length; i++) {
-      if (windows[i].requests > maxVal) maxVal = windows[i].requests;
-    }
+    if (windows[i].requests > maxVal) maxVal = windows[i].requests;
+  }
     var barsHtml = '';
     for (var i = 0; i < windows.length; i++) {
       var w = windows[i];
@@ -1120,7 +1148,7 @@ function renderStats(data) {
         '<span class="bar-val">' + (w.requests || 0) + '</span>' +
         '<span class="bar-label">' + esc(w.hour || '') + '</span>' +
         '</div>';
-    }
+  }
     $('statsChartWrap').innerHTML = '<div class="chart-bar">' + barsHtml + '</div>';
   }
 }
@@ -1146,9 +1174,9 @@ async function resetDb() {
     if (data.ok) {
       toast('✅ 数据库已清空');
       queryHistory();
-    } else {
+  } else {
       toast('清空失败', true);
-    }
+  }
   } catch (e) {
     toast('清空失败: ' + (e.message || String(e)), true);
   }
