@@ -1065,7 +1065,7 @@ function renderStatsError(msg) {
   $('statAvgInputSpeed').textContent = '!';
   $('statAvgOutputSpeed').textContent = '!';
   // 模型表格显示错误行
-  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th><th class="num">缓存读</th><th class="num">缓存写</th><th class="num">命中率</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="18" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
+  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">缓存读</th><th class="num">输出tokens</th><th class="num">缓存写</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th><th class="num">命中率</th></tr></thead><tbody id="statsModelsBody"><tr><td colspan="18" class="stats-empty">' + esc(msg) + '</td></tr></tbody></table>';
   $('statsChartWrap').innerHTML = '<div class="stats-empty">' + esc(msg) + '</div>';
 }
 
@@ -1084,7 +1084,7 @@ function renderStats(data) {
   $('statAvgOutputSpeed').textContent = fmtTokensPerSec(g.avg_output_tokens_per_sec);
 
   // 模型统计 - 先确保表格结构存在
-  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">输出tokens</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th><th class="num">缓存读</th><th class="num">缓存写</th><th class="num">命中率</th></tr></thead><tbody id="statsModelsBody"></tbody></table></div>';
+  $('statsModelsWrap').innerHTML = '<div class="stats-wrap"><table class="stats-table" id="statsModelsTable"><thead><tr><th>模型</th><th>厂商</th><th class="num">请求数</th><th class="num">流式</th><th class="num">非流式</th><th class="num">成功</th><th class="num">失败</th><th class="num">输入tokens</th><th class="num">缓存读</th><th class="num">输出tokens</th><th class="num">缓存写</th><th class="num">流量</th><th class="num">平均输入tok/s</th><th class="num">平均输出tok/s</th><th class="num">平均延迟</th><th class="num">最小</th><th class="num">最大</th><th class="num">命中率</th></tr></thead><tbody id="statsModelsBody"></tbody></table></div>';
   var tbody = $('statsModelsBody');
   tbody.innerHTML = '';
   var models = data.models || [];
@@ -1116,15 +1116,15 @@ function renderStats(data) {
         '<td class="num">' + fmtNum(m.success) + '</td>' +
         '<td class="num">' + fmtNum(m.failed) + '</td>' +
         '<td class="num">' + fmtNum(m.input_tokens) + '</td>' +
+        '<td class="num">' + fmtNum(m.cache_read_input_tokens || 0) + '</td>' +
         '<td class="num">' + fmtNum(m.output_tokens) + '</td>' +
+        '<td class="num">' + fmtNum(m.cache_creation_input_tokens || 0) + '</td>' +
         '<td class="num">' + fmtBytes(m.response_bytes) + '</td>' +
         '<td class="num">' + fmtTokensPerSec(m.avg_input_tokens_per_sec) + '</td>' +
         '<td class="num">' + fmtTokensPerSec(m.avg_output_tokens_per_sec) + '</td>' +
         '<td class="num">' + fmtMs(m.avg_latency_ms) + '</td>' +
         '<td class="num">' + fmtMs(m.min_latency_ms) + '</td>' +
         '<td class="num">' + fmtMs(m.max_latency_ms) + '</td>' +
-        '<td class="num">' + fmtNum(m.cache_read_input_tokens || 0) + '</td>' +
-        '<td class="num">' + fmtNum(m.cache_creation_input_tokens || 0) + '</td>' +
         '<td class="num">' + fmtPct(m.cache_hit_rate || 0, 1) + '</td>';
       tbody.appendChild(tr);
   }
@@ -1269,7 +1269,7 @@ function renderHistoryTable(result) {
 
   var html = '<div class="stats-wrap"><table class="stats-table"><thead><tr>';
   var cols = ['时间', '模型', '厂商', '流式', '状态码', '输入tokens', '输出tokens', '延迟(ms)', '请求大小', '响应大小'];
-  cols.forEach(function(c) { html += '<th>' + c + '</th>'; });
+  cols.forEach(function(c) { html += '<th' + (c === '时间' || c === '模型' || c === '厂商' || c === '流式' ? '' : ' class="num"') + '>' + c + '</th>'; });
   html += '</tr></thead><tbody>';
   data.forEach(function(row) {
     html += '<tr>';
@@ -1337,7 +1337,7 @@ function renderAggTable(data, timeKey, timeLabel) {
   // 表格
   var html = chartHtml + '<div class="stats-wrap"><table class="stats-table"><thead><tr>';
   var cols = [timeLabel, '请求数', '成功', '失败', '输入tokens', '输出tokens', '平均延迟(ms)'];
-  cols.forEach(function(c) { html += '<th>' + c + '</th>'; });
+  cols.forEach(function(c) { html += '<th' + (c === timeLabel ? '' : ' class="num"') + '>' + c + '</th>'; });
   html += '</tr></thead><tbody>';
   keys.forEach(function(k) {
     var a = agg[k];
