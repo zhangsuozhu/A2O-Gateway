@@ -415,8 +415,7 @@ static void handle_messages(struct evhttp_request *req) {
     char *upstream_body = NULL;
     char *url = NULL;
     if (passthrough) {
-        /* 透传模式：过滤 CCH 后直接使用 Anthropic 请求体 */
-        filter_cch_from_anthropic_request(anth);
+        /* 透传模式：直接使用 Anthropic 请求体，不做任何处理 */
         upstream_body = cJSON_PrintUnformatted(anth);
         url = make_upstream_url_for_messages(model);
         free(body); body = NULL;

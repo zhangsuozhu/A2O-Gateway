@@ -18,9 +18,10 @@ Claude Code
   - `POST /v1/messages` — 聊天补全（流式+非流式）
   - `POST /v1/messages/count_tokens` — Token 近似估算
   - `GET /v1/models` — 模型发现
-- 向上游请求 OpenAI-compatible Chat Completions：
-  - 默认拼接 `{base_url}/chat/completions`
-  - 也可配置完整 `endpoint`
+- 向上游请求：
+  - OpenAI-compatible Chat Completions（默认）：拼接 `{base_url}/chat/completions`，Anthropic 格式自动转换为 OpenAI 格式
+  - Anthropic Messages 透传（`api_mode: "passthrough"`）：拼接 `{base_url}/v1/messages`，直接转发 Anthropic 请求体，适合原生支持 Anthropic 格式的上游（如 Kimi）
+  - 也可配置完整 `endpoint` 覆盖 URL
 - 多模型、多厂商配置（实时生效）：
   - `id`: Claude Code 侧看到的模型名
   - `provider`: 模型厂商标识
@@ -41,9 +42,10 @@ Claude Code
 - 会话认证：管理员通过密码登录，服务端生成 session token，支持登录/登出
 - 支持默认模型切换：Claude Code 没传入匹配模型时使用 `active_model`
 - 支持按 `model` 路由：Claude Code 的 `ANTHROPIC_MODEL` 或 `claude --model xxx` 对应配置中的 `models[].id`
-- 支持流式 SSE 转换：OpenAI chunk -> Anthropic stream events
+- 支持流式 SSE 转换：OpenAI chunk -> Anthropic stream events；透传模式下保持原始流式格式
 - 支持工具调用转换：Anthropic tools/tool_use <-> OpenAI tools/tool_calls，流式+非流式
 - 支持 `reasoning_content`（OpenAI 推理字段）到 Anthropic `thinking` 块的转换
+- 支持透传模式（`api_mode: "passthrough"`）：跳过协议转换，直接转发 Anthropic 请求体到上游，适用于原生支持 Anthropic Messages API 的厂商
 - 实时终端打印：支持 `"all"`（完整 JSON）和 `"txt"`（纯文本）两种模式
 - 日志文件输出：同时输出到 stderr 和 `gateway.log`
 - 使用 `libcurl multi` + worker 线程池（可配置），连接复用上游
@@ -280,6 +282,7 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 | `models[].endpoint` | 模型 | string | 完整接口地址；非空时优先于 `base_url` |
 | `models[].api_key` | 模型 | string | 上游 API Key |
 | `models[].upstream_model` | 模型 | string | 上游真实模型名 |
+| `models[].api_mode` | 模型 | string | 模式：默认 `"openai_chat_completions"`（Anthropic→OpenAI 转换）；`"passthrough"` 跳过转换，直接发送 Anthropic 请求体到上游 |
 | `models[].params` | 模型 | object | temperature/top_p/max_tokens 等 |
 | `models[].extra_body` | 模型 | object | 厂商私有参数（如 `enable_search`） |
 

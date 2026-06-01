@@ -71,7 +71,11 @@ void filter_cch_from_anthropic_request(cJSON *anth_req) {
     if (cJSON_IsString(system) && system->valuestring) {
         char *filtered = strip_cch(system->valuestring);
         if (filtered) {
-            cJSON_ReplaceItemInObjectCaseSensitive(anth_req, "system", cJSON_CreateString(filtered));
+            if (filtered[0]) {
+                cJSON_ReplaceItemInObjectCaseSensitive(anth_req, "system", cJSON_CreateString(filtered));
+            } else {
+                cJSON_DeleteItemFromObjectCaseSensitive(anth_req, "system");
+            }
             free(filtered);
         }
     } else if (cJSON_IsArray(system)) {
@@ -83,7 +87,12 @@ void filter_cch_from_anthropic_request(cJSON *anth_req) {
                 if (cJSON_IsString(text_obj) && text_obj->valuestring) {
                     char *filtered = strip_cch(text_obj->valuestring);
                     if (filtered) {
-                        cJSON_ReplaceItemInObjectCaseSensitive(blk, "text", cJSON_CreateString(filtered));
+                        if (filtered[0]) {
+                            cJSON_ReplaceItemInObjectCaseSensitive(blk, "text", cJSON_CreateString(filtered));
+                        } else {
+                            /* empty after CCH strip: remove the text block entirely */
+                            cJSON_DeleteItemFromObjectCaseSensitive(blk, "text");
+                        }
                         free(filtered);
                     }
                 }
@@ -142,7 +151,10 @@ static void json_set_bool(cJSON *object, const char *key, bool value) {
  *         当内容仅为文本时，此函数可以提取出所有文本并用换行符拼接
  */
 cJSON *string_or_content_text(cJSON *content) {
-    if (cJSON_IsString(content)) return cJSON_CreateString(content->valuestring ? content->valuestring : "");
+    if (cJSON_IsString(content)) {
+        const char *s = content->valuestring ? content->valuestring : "";
+        return cJSON_CreateString(s[0] ? s : " ");
+    }
     membuf_t b; membuf_init(&b);
     if (cJSON_IsArray(content)) {
         cJSON *blk;
@@ -150,14 +162,14 @@ cJSON *string_or_content_text(cJSON *content) {
             const char *type = json_get_str(blk, "type");
             if (type && strcmp(type, "text") == 0) {
                 const char *t = json_get_str(blk, "text");
-                if (t) {
+                if (t && t[0]) {
                     if (b.len) membuf_append(&b, "\n", 1);
                     membuf_append(&b, t, strlen(t));
                 }
             }
         }
     }
-    cJSON *s = cJSON_CreateString(b.ptr ? b.ptr : "");
+    cJSON *s = cJSON_CreateString(b.ptr ? b.ptr : " ");
     membuf_free(&b);
     return s;
 }
@@ -176,8 +188,11 @@ cJSON *string_or_content_text(cJSON *content) {
  */
 cJSON *anthropic_content_to_openai_content(cJSON *content, bool *has_non_text) {
     *has_non_text = false;
-    if (cJSON_IsString(content)) return cJSON_CreateString(content->valuestring ? content->valuestring : "");
-    if (!cJSON_IsArray(content)) return cJSON_CreateString("");
+    if (cJSON_IsString(content)) {
+        const char *s = content->valuestring ? content->valuestring : "";
+        return cJSON_CreateString(s[0] ? s : " ");
+    }
+    if (!cJSON_IsArray(content)) return cJSON_CreateString(" ");
 
     cJSON *arr = cJSON_CreateArray();
     cJSON *blk;
@@ -185,9 +200,12 @@ cJSON *anthropic_content_to_openai_content(cJSON *content, bool *has_non_text) {
         const char *type = json_get_str(blk, "type");
         if (!type) continue;
         if (strcmp(type, "text") == 0) {
+            const char *t = json_get_str(blk, "text");
+            /* skip empty text blocks — upstream APIs (e.g. Kimi) reject {"type":"text","text":""} */
+            if (!t || !t[0]) continue;
             cJSON *o = cJSON_CreateObject();
             cJSON_AddStringToObject(o, "type", "text");
-            cJSON_AddStringToObject(o, "text", json_get_str(blk, "text") ? json_get_str(blk, "text") : "");
+            cJSON_AddStringToObject(o, "text", t);
             cJSON_AddItemToArray(arr, o);
         } else if (strcmp(type, "image") == 0) {
             *has_non_text = true;
@@ -316,7 +334,13 @@ cJSON *convert_message_content_blocks(cJSON *openai_messages, const char *role, 
                 cJSON_AddStringToObject(toolmsg, "role", "tool");
                 if (tid) cJSON_AddStringToObject(toolmsg, "tool_call_id", tid);
                 cJSON *trc = cJSON_GetObjectItemCaseSensitive(blk, "content");
-                cJSON_AddItemToObject(toolmsg, "content", string_or_content_text(trc));
+                cJSON *tool_content = string_or_content_text(trc);
+                /* upstream API (e.g. Kimi) rejects empty text content in tool messages */
+                if (cJSON_IsString(tool_content) && (!tool_content->valuestring || !tool_content->valuestring[0])) {
+                    cJSON_Delete(tool_content);
+                    tool_content = cJSON_CreateString(" ");
+                }
+                cJSON_AddItemToObject(toolmsg, "content", tool_content);
                 cJSON_AddItemToArray(openai_messages, toolmsg);
             } else if (strcmp(type, "text") == 0 || strcmp(type, "image") == 0) {
                 cJSON_AddItemToArray(text_blocks, cJSON_Duplicate(blk, 1));
@@ -362,8 +386,18 @@ cJSON *convert_message_content_blocks(cJSON *openai_messages, const char *role, 
                 cJSON_AddItemToArray(calls, call);
             }
         }
-        if (cJSON_GetArraySize(calls) > 0) cJSON_AddItemToObject(msg, "tool_calls", calls);
-        else cJSON_Delete(calls);
+        if (cJSON_GetArraySize(calls) > 0) {
+            cJSON_AddItemToObject(msg, "tool_calls", calls);
+            /* assistant messages with tool_calls but no text must have content=null,
+             * not content="" or " " — some upstream APIs (e.g. Kimi) reject empty string */
+            cJSON *content_field = cJSON_GetObjectItemCaseSensitive(msg, "content");
+            if (cJSON_IsString(content_field) && content_field->valuestring) {
+                const char *s = content_field->valuestring;
+                if (!s[0] || strcmp(s, " ") == 0) {
+                    cJSON_ReplaceItemInObjectCaseSensitive(msg, "content", cJSON_CreateNull());
+                }
+            }
+        } else cJSON_Delete(calls);
     }
     /* 透传 DeepSeek reasoning_content */
     if (reasoning_content && *reasoning_content) {
@@ -403,7 +437,8 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
             char *filtered = strip_cch(sys_content->valuestring);
             if (filtered) {
                 cJSON_Delete(sys_content);
-                sys_content = cJSON_CreateString(filtered);
+                /* upstream API (e.g. Kimi) rejects empty text content */
+                sys_content = cJSON_CreateString(filtered[0] ? filtered : " ");
                 free(filtered);
             }
         }
