@@ -1004,7 +1004,8 @@ function renderRealtime(data) {
 // ── 统计 ──
 function fmtNum(n) {
   if (n == null || isNaN(n)) return '-';
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e12) return (n / 1e12).toFixed(2) + 'T';
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'G';
   if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
   return Number(n).toLocaleString();
@@ -1279,10 +1280,10 @@ function renderHistoryTable(result) {
     html += '<td>' + escHtml(row.provider || '-') + '</td>';
     html += '<td>' + (row.stream ? '是' : '否') + '</td>';
     html += '<td class="num">' + (row.http_status || '-') + '</td>';
-    html += '<td class="num">' + (row.input_tokens || 0) + '</td>';
-    html += '<td class="num">' + (row.cache_read_input_tokens || 0) + '</td>';
-    html += '<td class="num">' + (row.output_tokens || 0) + '</td>';
-    html += '<td class="num">' + (row.cache_creation_input_tokens || 0) + '</td>';
+    html += '<td class="num">' + fmtNum(row.input_tokens || 0) + '</td>';
+    html += '<td class="num">' + fmtNum(row.cache_read_input_tokens || 0) + '</td>';
+    html += '<td class="num">' + fmtNum(row.output_tokens || 0) + '</td>';
+    html += '<td class="num">' + fmtNum(row.cache_creation_input_tokens || 0) + '</td>';
     html += '<td class="num">' + (row.latency_ms ? row.latency_ms.toFixed(1) : '-') + '</td>';
     html += '<td class="num">' + formatBytes(row.request_bytes || 0) + '</td>';
     html += '<td class="num">' + formatBytes(row.response_bytes || 0) + '</td>';
@@ -1346,11 +1347,11 @@ function renderAggTable(data, timeKey, timeLabel) {
     var a = agg[k];
     html += '<tr>';
     html += '<td>' + escHtml(k) + '</td>';
-    html += '<td class="num">' + a.requests + '</td>';
-    html += '<td class="num">' + a.success + '</td>';
-    html += '<td class="num">' + a.failed + '</td>';
-    html += '<td class="num">' + a.input_tokens + '</td>';
-    html += '<td class="num">' + a.output_tokens + '</td>';
+    html += '<td class="num">' + fmtNum(a.requests) + '</td>';
+    html += '<td class="num">' + fmtNum(a.success) + '</td>';
+    html += '<td class="num">' + fmtNum(a.failed) + '</td>';
+    html += '<td class="num">' + fmtNum(a.input_tokens) + '</td>';
+    html += '<td class="num">' + fmtNum(a.output_tokens) + '</td>';
     html += '<td class="num">' + (a.latency_count > 0 ? (a.total_latency_ms / a.latency_count).toFixed(1) : '-') + '</td>';
     html += '</tr>';
   });
