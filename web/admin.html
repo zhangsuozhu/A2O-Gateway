@@ -281,7 +281,7 @@
         <h2>📜 历史查询</h2>
         <div class="row" style="margin-bottom:12px;align-items:flex-end">
           <div style="flex:1.5"><label>查询类型</label>
-            <select id="histType">
+            <select id="histType" onchange="queryHistory()">
               <option value="history">请求明细</option>
               <option value="hourly">小时趋势</option>
               <option value="daily">日趋势</option>
@@ -290,6 +290,14 @@
           <div style="flex:1.5"><label>模型</label><input id="histModel" placeholder="留空=全部" /></div>
           <div><label>起始</label><input type="datetime-local" id="histFrom" /></div>
           <div><label>结束</label><input type="datetime-local" id="histTo" /></div>
+          <div style="flex:0.7"><label>每页</label>
+            <select id="histLimit" onchange="onHistLimitChange()">
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="200">200</option>
+            </select>
+          </div>
           <div style="flex:0.5"><button onclick="queryHistory()">🔍 查询</button></div>
         </div>
         <div id="historyResult">
@@ -342,6 +350,11 @@ let statsTimer = null;
 let rtTimer = null;
 let currentTab = 'config';
 let hiddenPaused = false;
+
+// 历史查询分页状态
+let histLimit = 100;
+let histOffset = 0;
+let histTotal = 0;
 
 function escHtml(s) {
   if (s == null) return '';
@@ -1097,7 +1110,8 @@ function formatBytes(b) {
   return (b / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-async function queryHistory() {
+async function queryHistory(keepOffset) {
+  if (!keepOffset) histOffset = 0;
   var type = $('histType').value;
   var model = $('histModel').value.trim();
   var fromVal = $('histFrom').value;
@@ -1116,6 +1130,10 @@ async function queryHistory() {
     if (type === 'history') params.push('to=' + toTs);
     else params.push('to=' + encodeURIComponent(toVal.slice(0, 13) + ':00'));
   }
+  if (type === 'history') {
+    params.push('limit=' + histLimit);
+    params.push('offset=' + histOffset);
+  }
   if (params.length) url += '?' + params.join('&');
 
   $('historyResult').innerHTML = '<div class="loading">查询中...</div>';
@@ -1131,11 +1149,39 @@ async function queryHistory() {
   }
 }
 
-function renderHistoryTable(data) {
-  if (!data || !data.length) {
+function onHistLimitChange() {
+  histLimit = parseInt($('histLimit').value) || 100;
+  histOffset = 0;
+  queryHistory();
+}
+
+function histPrevPage() {
+  if (histOffset <= 0) return;
+  histOffset -= histLimit;
+  if (histOffset < 0) histOffset = 0;
+  queryHistory(true);
+}
+
+function histNextPage() {
+  if (histOffset + histLimit >= histTotal) return;
+  histOffset += histLimit;
+  queryHistory(true);
+}
+
+function renderHistoryTable(result) {
+  var data = result && result.data ? result.data : [];
+  histTotal = result && result.total !== undefined ? result.total : 0;
+  histLimit = result && result.limit !== undefined ? result.limit : 100;
+  histOffset = result && result.offset !== undefined ? result.offset : 0;
+
+  if (!data.length) {
     $('historyResult').innerHTML = '<div class="stats-empty">无数据</div>';
     return;
   }
+
+  var totalPages = Math.max(1, Math.ceil(histTotal / histLimit));
+  var currentPage = Math.floor(histOffset / histLimit) + 1;
+
   var html = '<div class="stats-wrap"><table class="stats-table"><thead><tr>';
   var cols = ['时间', '模型', '厂商', '流式', '状态码', '输入tokens', '输出tokens', '延迟(ms)', '请求大小', '响应大小'];
   cols.forEach(function(c) { html += '<th>' + c + '</th>'; });
@@ -1155,6 +1201,18 @@ function renderHistoryTable(data) {
     html += '</tr>';
   });
   html += '</tbody></table></div>';
+
+  /* 分页控件 */
+  var pageInfo = '共 ' + histTotal + ' 条 · 第 ' + currentPage + ' / ' + totalPages + ' 页';
+  var prevDisabled = histOffset <= 0;
+  var nextDisabled = currentPage >= totalPages;
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px;">';
+  html += '<span style="color:#8899b4;">' + pageInfo + '</span>';
+  html += '<div style="display:flex;gap:6px;">';
+  html += '<button class="ghost sm" onclick="histPrevPage()"' + (prevDisabled ? ' disabled style="opacity:0.4;cursor:not-allowed;"' : '') + '">上一页</button>';
+  html += '<button class="ghost sm" onclick="histNextPage()"' + (nextDisabled ? ' disabled style="opacity:0.4;cursor:not-allowed;"' : '') + '">下一页</button>';
+  html += '</div></div>';
+
   $('historyResult').innerHTML = html;
 }
 

@@ -43,7 +43,8 @@ bool db_update_model_stats(const char *model, const char *provider,
  * from/to: Unix 时间戳范围（0 表示不过滤）
  * limit: 最大返回条数
  * offset: 偏移量
- * 返回: cJSON 数组（调用者负责 free），失败返回 NULL
+ * 返回: cJSON 对象 { "total": N, "limit": limit, "offset": offset, "data": [...] }
+ *   （调用者负责 free），失败返回空对象
  */
 cJSON *db_query_history(const char *model, time_t from, time_t to, int limit, int offset);
 
