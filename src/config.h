@@ -16,16 +16,17 @@
  * @param path:         JSON 配置文件路径（NULL 则使用 DEFAULT_CONFIG_PATH）
  * @param cli_port:     CLI -p 指定的端口，<=0 表示未指定
  * @param cli_password: CLI -P 指定的密码，NULL 表示未指定
+ * @param cli_workers:  CLI -w 指定的 worker 线程数，<=0 表示未指定
  * @return: 成功返回 0；失败不返回（会创建默认配置）
  *
  * 工作原理：
  * 1. 读取指定路径的 JSON 文本并解析
- * 2. 解析失败时，生成内置默认配置（使用 cli_port/cli_password）并写回磁盘
+ * 2. 解析失败时，生成内置默认配置（使用 CLI 参数）并写回磁盘
  * 3. 解析成功后，提取 worker_threads、log_level、realtime_print 等关键字段
  *    更新全局状态（WORKER_COUNT、日志级别、实时打印模式）
- * 4. 若 cli_port/cli_password 指定，覆盖配置并持久化到磁盘
+ * 4. 若 CLI 参数指定，覆盖配置并持久化到磁盘
  */
-int config_load(const char *path, long cli_port, const char *cli_password);
+int config_load(const char *path, long cli_port, const char *cli_password, long cli_workers);
 
 /**
  * config_masked_json() — 返回脱敏后的配置 JSON 字符串

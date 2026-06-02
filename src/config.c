@@ -259,7 +259,7 @@ static void preserve_masked_keys(cJSON *incoming, cJSON *oldroot) {
  *    - 其他   → RT_OFF（关闭）
  * 7. 存储根配置到 G.root，供后续查询
  */
-int config_load(const char *path, long cli_port, const char *cli_password) {
+int config_load(const char *path, long cli_port, const char *cli_password, long cli_workers) {
     pthread_rwlock_init(&G.lock, NULL);
     snprintf(G.path, sizeof(G.path), "%s", path ? path : DEFAULT_CONFIG_PATH);
     size_t n = 0;
@@ -298,6 +298,18 @@ int config_load(const char *path, long cli_port, const char *cli_password) {
             cJSON_DeleteItemFromObject(root, "admin_password");
         }
         cJSON_AddStringToObject(root, "admin_password", cli_password);
+        cli_overrides = true;
+    }
+    if (cli_workers > 0) {
+        long wc = cli_workers;
+        if (wc < 1) wc = 1;
+        if (wc > MAX_WORKERS) wc = MAX_WORKERS;
+        cJSON *wt = cJSON_GetObjectItemCaseSensitive(root, "worker_threads");
+        if (cJSON_IsNumber(wt)) {
+            cJSON_SetNumberValue(wt, wc);
+        } else {
+            cJSON_AddNumberToObject(root, "worker_threads", wc);
+        }
         cli_overrides = true;
     }
     if (cli_overrides) {

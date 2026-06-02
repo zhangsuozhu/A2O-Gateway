@@ -242,6 +242,7 @@ int main(int argc, char **argv) {
     if (!config_path) config_path = DEFAULT_CONFIG_PATH;
     bool daemon_mode = false;
     long cli_port = -1;
+    long cli_workers = -1;
     const char *cli_password = NULL;
     /* 解析命令行参数：第一个非配置路径参数为 --daemon */
     for (int i = 1; i < argc; i++) {
@@ -252,6 +253,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "  -f, --file PATH      Config file path (default: %s)\n", DEFAULT_CONFIG_PATH);
             fprintf(stderr, "  -p, --port PORT      Listen port (default: 8081)\n");
             fprintf(stderr, "  -P, --password PASS  Admin web UI password (default: empty)\n");
+            fprintf(stderr, "  -w, --workers NUM    Worker threads (default: 4, max: %d)\n", MAX_WORKERS);
             fprintf(stderr, "  -d, --daemon         Run as background daemon\n");
             fprintf(stderr, "  -h, --help           Show this help\n");
             return 0;
@@ -261,6 +263,8 @@ int main(int argc, char **argv) {
             if (i + 1 < argc) cli_port = strtol(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "-P") == 0 || strcmp(argv[i], "--password") == 0) {
             if (i + 1 < argc) cli_password = argv[++i];
+        } else if (strcmp(argv[i], "-w") == 0 || strcmp(argv[i], "--workers") == 0) {
+            if (i + 1 < argc) cli_workers = strtol(argv[++i], NULL, 10);
         } else {
             config_path = argv[i];
         }
@@ -269,7 +273,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     if (evthread_use_pthreads() != 0) { fprintf(stderr, "evthread_use_pthreads failed\n"); return 1; }
     curl_global_init(CURL_GLOBAL_DEFAULT);
-    config_load(config_path, cli_port, cli_password);
+    config_load(config_path, cli_port, cli_password, cli_workers);
     stats_init();
 
     /* 初始化 SQLite 数据库（持久化统计和历史） */
