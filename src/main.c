@@ -274,12 +274,12 @@ int main(int argc, char **argv) {
 
     /* 初始化 SQLite 数据库（持久化统计和历史） */
     char *db_path = config_get_string_copy("db_path");
-    db_init(db_path ? db_path : "gateway.db");
+    db_init(db_path ? db_path : "/var/log/gateway.db");
     free(db_path);
 
     /* 从配置读取 log_file，默认使用 gateway.log（兼容旧版）或 /var/log 路径 */
     char *log_file = config_get_string_copy("log_file");
-    const char *log_path = log_file ? log_file : "gateway.log";
+    const char *log_path = log_file ? log_file : "/var/log/gateway.log";
     log_open(log_path);
     free(log_file);
 
