@@ -1,123 +1,43 @@
 # Claude Code OpenAI-Compatible Gateway
 
-这是一个用 C 实现的本地 API 网关：
+用 C 实现的本地 API 网关，将 Anthropic Messages API 转换为 OpenAI Chat Completions 协议，让 Claude Code 可以使用任意兼容 OpenAI 格式的模型服务。
 
-```text
-Claude Code
-  -> Anthropic Messages API: POST /v1/messages
-  -> 本网关
-  -> OpenAI-compatible Chat Completions: POST /v1/chat/completions
-  -> 任意兼容 OpenAI 格式的模型厂商
+```
+Claude Code (Anthropic Protocol)
+  → POST /v1/messages
+  → 本网关 (协议转换)
+  → POST /v1/chat/completions (OpenAI Protocol)
+  → 阿里百炼 / DeepSeek / Moonshot / SiliconFlow / Ollama / vLLM / ...
 ```
 
-适用场景：你正在使用 Claude Code，但手里只有 OpenAI 兼容格式的接口，例如自建模型服务、阿里百炼 compatible-mode、DeepSeek、Moonshot、SiliconFlow、Ollama/OpenWebUI/vLLM 等。
+适用场景：你正在使用 Claude Code，但手里只有 OpenAI 兼容格式的 API 接口。
 
-## 能力清单
+<p align="center">
+  <a href="https://github.com/zhangsuozhu/A2O-Gateway">⭐ 如果这个项目对你有帮助，请给一个 Star ❤️</a>
+</p>
 
-- 对 Claude Code 暴露 Anthropic Messages 兼容接口：
-  - `POST /v1/messages` — 聊天补全（流式+非流式）
-  - `POST /v1/messages/count_tokens` — Token 近似估算
-  - `GET /v1/models` — 模型发现
-- 向上游请求：
-  - OpenAI-compatible Chat Completions（默认）：拼接 `{base_url}/chat/completions`，Anthropic 格式自动转换为 OpenAI 格式
-  - Anthropic Messages 透传（`api_mode: "passthrough"`）：拼接 `{base_url}/v1/messages`，直接转发 Anthropic 请求体，适合原生支持 Anthropic 格式的上游（如 Kimi）
-  - OpenAI Chat Completions 透传：`POST /v1/chat/completions` 直接按 OpenAI 格式透传到上游，用于 OpenAI SDK 或非 Claude Code 客户端
-  - 也可配置完整 `endpoint` 覆盖 URL
-- 多模型、多厂商配置（实时生效）：
-  - `id`: Claude Code 侧看到的模型名
-  - `provider`: 模型厂商标识
-  - `base_url` / `endpoint`: 模型接口地址
-  - `api_key`: 上游密钥
-  - `upstream_model`: 上游真实模型名称
-  - `params`: temperature/top_p 等常规参数
-  - `extra_body`: 厂商私有扩展参数
-- 双认证方式：`Authorization: Bearer` 或 `x-api-key` 请求头
-- 健康检查端点：`GET /healthz` 和 `GET /readyz`
-- 支持 Web 配置界面（密码 + session 登录）：
-  - `GET /` — 根路径跳转管理页
-  - `GET /admin` — Web 管理界面
-  - 运行时查看/修改配置
-  - 一键切换默认模型
-  - 一键修改管理员密码
-  - 一键生成 Claude Code 连接信息
-- 会话认证：管理员通过密码登录，服务端生成 session token，支持登录/登出
-- 支持默认模型切换：Claude Code 没传入匹配模型时使用 `active_model`
-- 支持按 `model` 路由：Claude Code 的 `ANTHROPIC_MODEL` 或 `claude --model xxx` 对应配置中的 `models[].id`
-- 支持流式 SSE 转换：OpenAI chunk -> Anthropic stream events；透传模式下保持原始流式格式
-- 支持工具调用转换：Anthropic tools/tool_use <-> OpenAI tools/tool_calls，流式+非流式
-- 支持 `reasoning_content`（OpenAI 推理字段）到 Anthropic `thinking` 块的转换
-- 支持剥离 `reasoning_content`：对 DeepSeek 等上游，开启后构建请求时移除 assistant message 中的 `reasoning_content`，避免其被重复计费为不参与缓存的 prompt input
-- 实时终端打印：支持 `"all"`（完整 JSON）和 `"txt"`（纯文本）两种模式
-- 日志文件输出：同时输出到 stderr 和 `/var/log/gateway.log`
-- 使用 `libcurl multi` + worker 线程池（可配置），连接复用上游
-- 使用 `libevent` 提供 HTTP 服务
-- 配置文件热加载（通过 Web UI 修改即时生效）
-- 支持 `GATEWAY_CONFIG` 环境变量指定配置文件路径
-- 请求统计面板（Web UI `/admin` > 统计页签）：
-  - 全局概览：请求数、成功率、活跃请求峰值、延迟、token 用量、流量
-  - 速度统计：输入/输出 token 速度、流量速度（最近 5 秒滑动窗口平均）
-  - 按模型/厂商聚合：每个模型/厂商的请求量、延迟、token、错误码细分
-  - 时间窗口趋势（每小时聚合，保留 24 小时）
+## 快速开始
 
-## 依赖
-
-Debian / Ubuntu:
+### 安装依赖
 
 ```bash
-sudo apt-get update
+# Debian/Ubuntu
 sudo apt-get install -y build-essential cmake pkg-config \
   libevent-dev libcurl4-openssl-dev libcjson-dev ca-certificates
-```
 
-macOS:
-
-```bash
+# macOS
 brew install cmake pkg-config libevent curl cjson
 ```
 
-## 构建
+### 构建 & 运行
 
 ```bash
 make build
-```
 
-## 运行
-
-先编辑配置（可选，首次启动会自动生成默认配置）：
-
-```bash
-cp config/gateway.json config/gateway.local.json
-vim config/gateway.local.json
-```
-
-至少修改：
-
-```json
-{
-  "gateway_api_key": "cc-local-token",
-  "admin_password": "",
-  "active_model": "qwen-coder",
-  "models": [
-    {
-      "id": "qwen-coder",
-      "provider": "aliyun-bailian",
-      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "api_key": "真实 API Key",
-      "upstream_model": "qwen3-coder-plus"
-    }
-  ]
-}
-```
-
-> `admin_password` 默认为空，可直接登录 Web 管理界面。设置后需用新密码登录。
-
-启动：
-
-```bash
-# 全默认启动（端口 8081，空密码，4 worker）
+# 首次运行会自动生成默认配置
 ./build/cc-oai-gateway
 
-# 指定配置文件（首次自动创建默认配置）
+# 指定配置文件
 ./build/cc-oai-gateway -f ./config/gateway.local.json
 
 # 指定端口、密码、worker 数
@@ -125,56 +45,36 @@ vim config/gateway.local.json
 
 # 后台守护进程
 ./build/cc-oai-gateway -d
-
-# 查看帮助
-./build/cc-oai-gateway -h
 ```
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `-f, --file PATH` | 配置文件路径 | `./config/gateway.json` |
-| `-p, --port PORT` | 监听端口 | `8081` |
-| `-P, --password PASS` | Web 管理密码 | 空 |
-| `-w, --workers NUM` | Worker 线程数（1-8） | `4` |
-| `-d, --daemon` | 后台守护进程 | 前台运行 |
-| `-h, --help` | 显示帮助 | — |
+编辑 `config/gateway.local.json`，填入你的上游 API Key：
 
-也支持 `GATEWAY_CONFIG` 环境变量指定配置文件。
+```json
+{
+  "gateway_api_key": "cc-local-token",
+  "active_model": "qwen-coder",
+  "models": [{
+    "id": "qwen-coder",
+    "provider": "aliyun-bailian",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "你的真实 API Key",
+    "upstream_model": "qwen3-coder-plus"
+  }]
+}
+```
 
-打开 Web 配置界面：
-
-```text
-http://127.0.0.1:8081/admin
-
-### Realtime 打印模式
-
-配置 `realtime_print` 字段选择实时输出模式：
-
-| 值 | 效果 |
-|---|------|
-| `"false"` | 关闭实时打印（默认） |
-| `"all"` | 实时打印完整 JSON 请求/响应 |
-| `"txt"` | 仅提取对话文本内容，适合纯文本查看 |
-
-## 配置 Claude Code
-
-Shell 环境变量方式：
+### 配置 Claude Code
 
 ```bash
 export ANTHROPIC_BASE_URL="http://127.0.0.1:8081"
 export ANTHROPIC_AUTH_TOKEN="cc-local-token"
 export ANTHROPIC_API_KEY="cc-local-token"
 export ANTHROPIC_MODEL="qwen-coder"
-export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
-# 可选：让新版 Claude Code 启用网关模型发现；若模型 ID 不以 claude/anthropic 开头，建议仍用 ANTHROPIC_MODEL 或 --model 指定。
-export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
 
 claude --model qwen-coder
 ```
 
-也可以在 Web UI 点击“生成 Claude Code 配置”。
-
-项目级 `.claude/settings.json` 可以这样写，具体字段以你当前 Claude Code 版本支持为准：
+或通过项目级 `.claude/settings.json`：
 
 ```json
 {
@@ -183,194 +83,158 @@ claude --model qwen-coder
     "ANTHROPIC_AUTH_TOKEN": "cc-local-token",
     "ANTHROPIC_API_KEY": "cc-local-token",
     "ANTHROPIC_MODEL": "qwen-coder",
-    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
     "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
   }
 }
 ```
 
-> `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` 让新版 Claude Code 通过 `GET /v1/models` 自动发现可用模型列表，避免在客户端硬编码模型 ID。
+> `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` 让 Claude Code 通过 `GET /v1/models` 自动发现可用模型列表。
 
-## 手工测试
+## CLI 参数
 
-健康检查：
-```bash
-curl http://127.0.0.1:8081/healthz
-```
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `-f, --file PATH` | 配置文件路径 | `./config/gateway.json` |
+| `-p, --port PORT` | 监听端口 | `8081` |
+| `-P, --password PASS` | Web 管理密码 | 空 |
+| `-w, --workers NUM` | Worker 线程数 (1-8) | `4` |
+| `-d, --daemon` | 后台守护进程 | 前台运行 |
+| `-h, --help` | 显示帮助 | — |
 
-非流式：
-```bash
-curl http://127.0.0.1:8081/v1/messages \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer cc-local-token' \
-  -d @examples/anthropic-message.json
-```
+也支持 `GATEWAY_CONFIG` 环境变量指定配置文件路径。
 
-流式：
-```bash
-curl -N http://127.0.0.1:8081/v1/messages \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer cc-local-token' \
-  -d @examples/anthropic-stream.json
-```
+## 三种处理模式
 
-工具调用（非流式）：
-```bash
-curl http://127.0.0.1:8081/v1/messages \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer cc-local-token' \
-  -d @examples/anthropic-tool.json
-```
+| 模式 | 客户端协议 | 上游协议 | 说明 |
+|------|-----------|---------|------|
+| **协议转换**（默认） | Anthropic `/v1/messages` | OpenAI `/chat/completions` | Anthropic ↔ OpenAI 双向转换 |
+| **Anthropic 透传** | Anthropic `/v1/messages` | Anthropic `/v1/messages` | `api_mode: "passthrough"`，直接转发 |
+| **OpenAI 透传** | OpenAI `/v1/chat/completions` | OpenAI `/chat/completions` | 监控模式，不转换 |
 
-Token 估算：
-```bash
-curl http://127.0.0.1:8081/v1/messages/count_tokens \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer cc-local-token' \
-  -d @examples/anthropic-message.json
-```
-
-注意：`count_tokens` 当前是本地估算，不是精确分词。Claude Code 常用它做上下文预估，若你的上游厂商提供 tokenizer API，可以在后续版本中替换为真实实现。
-
-请求统计（需先登录获取 session token）：
-```bash
-# 登录
-curl http://127.0.0.1:8081/admin/api/login \
-  -X POST -d '{"password":"your-admin-password"}'
-# 返回 {"token":"xxxxx"}
-
-# 查看统计
-curl http://127.0.0.1:8081/admin/api/stats \
-  -H 'Authorization: Bearer xxxxx'
-
-# 重置统计
-curl http://127.0.0.1:8081/admin/api/stats/reset \
-  -X POST -H 'Authorization: Bearer xxxxx'
-```
-
-## 配置字段说明
-
-```json
-{
-  "listen_host": "0.0.0.0",
-  "listen_port": 8081,
-  "log_level": "info",
-  "realtime_print": "false",
-  "gateway_api_key": "Claude Code 访问本网关的 token",
-  "admin_password": "Web 管理界面登录密码（默认为空）",
-  "db_path": "/var/log/gateway.db",
-  "log_file": "/var/log/gateway.log",
-  "worker_threads": 4,
-  "active_model": "默认模型 id",
-  "models": [
-    {
-      "id": "Claude Code 侧使用的模型名",
-      "provider": "厂商名，仅用于标识和日志",
-      "priority": 100,
-      "api_mode": "openai_chat_completions",
-      "base_url": "OpenAI 兼容 base_url，例如 https://api.example.com/v1",
-      "endpoint": "完整接口地址，可空；非空时优先使用",
-      "api_key": "上游模型厂商 API Key",
-      "upstream_model": "上游真实模型名",
-      "enabled": true,
-      "params": {
-        "temperature": 0.2,
-        "top_p": 0.95,
-        "max_tokens": 4096
-      },
-      "extra_body": {
-        "enable_search": true
-      }
-    }
-  ]
-}
-```
-
-### 配置字段明细
-
-| 字段 | 层级 | 类型 | 说明 |
-|------|------|------|------|
-| `listen_host` | 顶层 | string | 监听地址，默认 `0.0.0.0` |
-| `listen_port` | 顶层 | number | 监听端口，默认 `8081` |
-| `log_level` | 顶层 | string | 日志级别：`debug`/`info`/`warn`/`error` |
-| `realtime_print` | 顶层 | string | 实时输出模式：`"false"` 关闭、`"all"` 完整 JSON、`"txt"` 纯文本（仅提取对话内容） |
-| `gateway_api_key` | 顶层 | string | Claude Code 认证凭据 |
-| `admin_password` | 顶层 | string | Web 管理界面登录密码，默认为空，通过 UI 登录后获取 session |
-| `db_path` | 顶层 | string | SQLite 数据库路径，默认 `/var/log/gateway.db` |
-| `log_file` | 顶层 | string | 日志文件路径，默认 `/var/log/gateway.log` |
-| `worker_threads` | 顶层 | number | 工作线程数，范围 1-8，默认 `4` |
-| `active_model` | 顶层 | string | 默认模型 ID |
-| `models[].id` | 模型 | string | Claude Code 侧使用的模型名（`--model` 参数） |
-| `models[].provider` | 模型 | string | 厂商名，仅用于日志/标识 |
-| `models[].priority` | 模型 | number | 优先级，0-1000，小的优先（默认100） |
-| `models[].enabled` | 模型 | bool | 是否启用，默认 `true` |
-| `models[].base_url` | 模型 | string | OpenAI 兼容接口地址 |
-| `models[].endpoint` | 模型 | string | 完整接口地址；非空时优先于 `base_url` |
-| `models[].api_key` | 模型 | string | 上游 API Key |
-| `models[].upstream_model` | 模型 | string | 上游真实模型名 |
-| `models[].api_mode` | 模型 | string | 模式：默认 `"openai_chat_completions"`（Anthropic→OpenAI 转换）；`"passthrough"` 跳过转换，直接发送 Anthropic 请求体到上游 |
-| `models[].params` | 模型 | object | temperature/top_p/max_tokens 等 |
-| `models[].extra_body` | 模型 | object | 厂商私有参数（如 `enable_search`） |
-| `models[].cache_policy` | 模型 | string | 缓存策略：`"off"`（默认）或 `"auto"`。`"auto"` 自动注入 `cache_control: {type: "ephemeral"}` |
-| `models[].min_cache_tokens` | 模型 | number | 自动缓存注入阈值（token 数），默认 1024 |
-| `models[].prompt_tokens_includes_cache` | 模型 | bool | `true`（默认）表示 `prompt_tokens` 已包含缓存 token。`false` 时网关自行合并 `pt + cr + cc`（如 Moonshot） |
-| `models[].strip_reasoning_content` | 模型 | bool | `false`（默认）表示透传 assistant message 中的 `reasoning_content`。`true` 时构建上游请求前将其剥离，避免 DeepSeek 等上游将其计费为不参与缓存的 prompt input |
+所有模式均记录统计和历史。
 
 ## API 端点
 
-| Method | Path | Handler | Auth |
-|--------|------|---------|------|
-| POST | /v1/messages | 聊天补全（流式+非流式） | gateway_api_key |
-| POST | /v1/messages/count_tokens | Token 近似估算 | gateway_api_key |
-| GET | /v1/models | 模型发现 | gateway_api_key |
-| GET | / | 根路径跳转管理页 | none |
-| GET | /admin | Web 管理界面 | session（admin_password 登录） |
-| POST | /admin/api/login | 密码登录，返回 session token | admin_password |
-| POST | /admin/api/logout | 登出，销毁 session | session token |
-| GET | /admin/api/config | 获取配置（API Key 已掩码） | session token |
-| PUT/POST | /admin/api/config | 更新完整配置 | session token |
-| POST | /admin/api/switch | 切换默认模型 | session token |
-| POST | /admin/api/change-password | 修改管理员密码 | session token + old_password |
-| GET | /admin/api/stats | 获取请求统计 | session token |
-| POST | /admin/api/stats/reset | 重置统计 | session token |
-| GET | /healthz | 健康检查 | none |
-| GET | /readyz | 健康检查别名 | none |
+### 业务接口（需 gateway_api_key 认证）
 
-## 转换规则摘要
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/v1/messages` | 聊天补全（流式+非流式） |
+| POST | `/v1/messages/count_tokens` | Token 近似估算 |
+| GET | `/v1/models` | 模型列表 |
+| POST | `/v1/chat/completions` | OpenAI 透传接口 |
 
-### Anthropic -> OpenAI
+### 管理接口（需 session 认证）
 
-- 顶层 `system` -> OpenAI `messages[0].role = system`
-- `messages[].role=user/assistant` -> OpenAI 同名角色
-- Anthropic `content: "text"` -> OpenAI `content: "text"`
-- Anthropic text/image 内容块 -> OpenAI content parts
-- Anthropic `tools[].input_schema` -> OpenAI `tools[].function.parameters`
-- Anthropic `tool_choice` -> OpenAI `tool_choice`
-- Anthropic `max_tokens` -> OpenAI `max_tokens`
-- Anthropic `stop_sequences` -> OpenAI `stop`
-- Anthropic `stream` -> OpenAI `stream`
-- Anthropic `thinking` / `signature` -> 暂透传（保留原有字段）
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/admin` | Web 管理界面 |
+| POST | `/admin/api/login` | 密码登录 |
+| POST | `/admin/api/logout` | 登出 |
+| GET | `/admin/api/config` | 查看配置（密钥已脱敏） |
+| PUT/POST | `/admin/api/config` | 热更新配置 |
+| POST | `/admin/api/switch` | 切换默认模型 |
+| POST | `/admin/api/change-password` | 修改管理密码 |
+| GET | `/admin/api/stats` | 请求统计 |
+| POST | `/admin/api/stats/reset` | 重置统计 |
+| POST | `/admin/api/db/reset` | 重置数据库 |
+| GET | `/admin/api/history` | 请求历史 |
+| GET | `/admin/api/hourly` | 小时聚合统计 |
+| GET | `/admin/api/daily` | 日聚合统计 |
+| GET | `/admin/api/debug` | 实时调试信息 |
+| GET | `/admin/api/error_logs` | 错误日志 |
 
-### OpenAI -> Anthropic
+### 公开接口
 
-- OpenAI `choices[0].message.content` -> Anthropic `content[{type:text}]`
-- OpenAI `tool_calls` -> Anthropic `content[{type:tool_use}]`
-- OpenAI `choices[0].delta.reasoning_content` -> Anthropic `delta.type=thinking` 块
-- OpenAI `finish_reason=stop` -> `stop_reason=end_turn`
-- OpenAI `finish_reason=length` -> `stop_reason=max_tokens`
-- OpenAI `finish_reason=tool_calls` -> `stop_reason=tool_use`
-- OpenAI `usage.prompt_tokens/completion_tokens` -> Anthropic `usage.input_tokens/output_tokens`
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/healthz` | 健康检查 |
+| GET | `/readyz` | 健康检查别名 |
+| GET | `/` | 跳转到 `/admin` |
 
-## 生产部署建议
+## 配置字段说明
 
-- 不要把 Web 管理界面直接暴露到公网；放在内网或反向代理后面。
-- `admin_password` 和 `gateway_api_key` 使用高强度随机值。
-- 配置文件权限建议 `chmod 600 config/gateway.local.json`。
-- 在反向代理层启用 TLS、访问日志、限流、IP 白名单。
-- 如需团队使用，建议把 API Key 加密存储，或改接 Vault/KMS。
-- 如需审计，建议只记录请求元信息，不落盘完整 prompt/code。
-- 对工具调用参数必须在实际执行工具前进行业务级校验。
-- 生产环境建议关闭 `realtime_print` 以避免日志重复输出。
+### 顶层配置
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `listen_host` | string | `0.0.0.0` | 监听地址 |
+| `listen_port` | number | `8081` | 监听端口 |
+| `log_level` | string | `info` | 日志级别：`debug`/`info`/`warn`/`error` |
+| `realtime_print` | string | `false` | 实时打印：`false`/`all`（完整 JSON）/`txt`（纯文本） |
+| `gateway_api_key` | string | — | 网关访问凭据 |
+| `admin_password` | string | 空 | Web 管理界面登录密码 |
+| `db_path` | string | `/var/log/gateway.db` | SQLite 数据库路径 |
+| `log_file` | string | `/var/log/cc-oai-gateway.log` | 日志文件路径 |
+| `worker_threads` | number | `4` | Worker 线程数 (1-8) |
+| `active_model` | string | — | 默认模型 ID |
+
+### 模型配置
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `id` | string | — | **必填**，Claude Code 侧模型名 |
+| `provider` | string | — | 厂商标识（日志/统计用） |
+| `base_url` | string | — | OpenAI 兼容接口地址 |
+| `endpoint` | string | — | 完整接口地址，优先级高于 `base_url` |
+| `api_key` | string | — | **必填**，上游 API Key |
+| `upstream_model` | string | — | **必填**，上游真实模型名 |
+| `api_mode` | string | `openai_chat_completions` | `openai_chat_completions`（转换）或 `passthrough`（透传） |
+| `priority` | number | `100` | 优先级 0-1000，越小越优先 |
+| `enabled` | bool | `true` | 是否启用 |
+| `params` | object | — | temperature/top_p/max_tokens 等 |
+| `extra_body` | object | — | 厂商私有参数，合并到请求体 |
+| `cache_policy` | string | `off` | `off` 或 `auto`（自动注入 cache_control） |
+| `min_cache_tokens` | number | `1024` | 自动缓存注入的 token 阈值 |
+| `prompt_tokens_includes_cache` | bool | `true` | prompt_tokens 是否已含缓存 token |
+| `strip_reasoning_content` | bool | `false` | 剥离 upstream 请求中的 reasoning_content |
+
+### `prompt_tokens_includes_cache` 说明
+
+大多数厂商（OpenAI/Anthropic/DeepSeek）的 `prompt_tokens` 已包含缓存命中/创建的 token，设为 `true`。Moonshot 等厂商的 `prompt_tokens` 不含缓存 token，需设为 `false`，网关会自动合并 `prompt_tokens + cache_read + cache_creation`。
+
+### `strip_reasoning_content` 说明
+
+DeepSeek 等上游会将 assistant message 中的 `reasoning_content` 按普通 prompt input 计费且不参与缓存。开启此选项后，网关在构建上游请求前自动剥离 assistant message 中的 `reasoning_content`，避免重复计费。
+
+## 协议转换
+
+### Anthropic → OpenAI
+
+| Anthropic | OpenAI |
+|-----------|--------|
+| `system` 参数 | `messages[0].role=system` |
+| `tools[].input_schema` | `tools[].function.parameters` |
+| `tool_choice` | `tool_choice` |
+| `max_tokens` | `max_tokens` |
+| `stop_sequences` | `stop` |
+| `stream` | `stream` |
+
+### OpenAI → Anthropic
+
+| OpenAI | Anthropic |
+|--------|-----------|
+| `message.content` | `content[{type:text}]` |
+| `tool_calls` | `content[{type:tool_use}]` |
+| `reasoning_content` | `content[{type:thinking}]` |
+| `finish_reason=stop` | `stop_reason=end_turn` |
+| `finish_reason=length` | `stop_reason=max_tokens` |
+| `finish_reason=tool_calls` | `stop_reason=tool_use` |
+| `usage.prompt_tokens` | `usage.input_tokens` |
+| `usage.completion_tokens` | `usage.output_tokens` |
+
+## Web 管理界面
+
+访问 `http://127.0.0.1:8081/admin`，功能包括：
+
+- 查看/修改完整配置（热加载，即时生效）
+- 一键切换默认模型
+- 修改管理员密码
+- 请求统计面板（按模型/时间/状态码聚合）
+- 请求历史查询
+- Claude Code 连接信息一键生成
+
+配置热加载时，Web UI 中显示为 `***MASKED***` 的 API Key 会在服务端自动保留原值，无需重新输入。
 
 ## Docker
 
@@ -381,13 +245,50 @@ docker run --rm -p 8081:8081 \
   cc-oai-gateway:latest
 ```
 
-使用 Docker 时，配置文件路径固定在容器内 `/app/config/gateway.json`，挂载时无需修改模板，直接挂载你的 `gateway.local.json` 即可。
+## 手工测试
+
+```bash
+# 健康检查
+curl http://127.0.0.1:8081/healthz
+
+# 非流式
+curl http://127.0.0.1:8081/v1/messages \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer cc-local-token' \
+  -d @examples/anthropic-message.json
+
+# 流式
+curl -N http://127.0.0.1:8081/v1/messages \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer cc-local-token' \
+  -d @examples/anthropic-stream.json
+
+# Token 估算
+curl http://127.0.0.1:8081/v1/messages/count_tokens \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer cc-local-token' \
+  -d @examples/anthropic-message.json
+
+# OpenAI 透传（非流式）
+curl http://127.0.0.1:8081/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer cc-local-token' \
+  -d '{"model":"qwen-coder","messages":[{"role":"user","content":"hi"}]}'
+```
+
+## 技术栈
+
+- **C11** + CMake 构建
+- **libevent** — HTTP 服务器
+- **libcurl multi** — 上游 HTTP 客户端（worker 线程池，连接复用）
+- **cJSON** — JSON 解析
+- **SQLite** (WAL 模式) — 请求历史和统计数据持久化
+- Admin UI 编译时嵌入二进制（xxd -i），运行时无需静态文件
 
 ## 已知限制
 
-- 当前只实现 OpenAI-compatible Chat Completions，不实现 OpenAI Responses API。
-- `count_tokens` 是近似估算（按字节/4），非真实 tokenizer。
-- 不同厂商对 `stream_options.include_usage`、`max_tokens` 上限、工具调用格式的支持程度不同；可通过 `extra_body` 或修改转换逻辑适配。
-- Claude Code 的某些 beta header（如 `anthropic-beta`）会被接收但不会透传到 OpenAI 兼容上游。
-- 工具调用在流式模式下依赖 SSE chunk 拼接，部分厂商的 tool_calls chunk 格式可能不标准，需逐个适配。
-- 使用 `params.max_tokens` 字段传递给上游，部分厂商可能使用不同字段名（如 `max_tokens` vs `max_new_tokens`）。
+- `count_tokens` 为近似估算（字节数/4），非真实 tokenizer
+- 强制 HTTP/1.1 连接上游（避免 DeepSeek 等厂商的 HTTP/2 帧错误）
+- 不同厂商对 `stream_options`、`max_tokens` 上限、工具调用格式的兼容性不同
+- 工具调用流式模式依赖 SSE chunk 拼接，部分厂商格式可能不标准
+- 不实现 OpenAI Responses API

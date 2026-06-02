@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Claude Code 网关管理</title>
+  <title>大模型API网关管理</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#0b1120;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
@@ -122,7 +122,7 @@
 <!-- 登录界面 -->
 <div id="loginPage" style="display:none;position:fixed;inset:0;background:#0b1120;z-index:2000;display:flex;justify-content:center;align-items:center">
   <div style="width:90%;max-width:360px;text-align:center">
-    <h1 style="font-size:22px;margin-bottom:8px">⚡ Claude Code 网关</h1>
+    <h1 style="font-size:22px;margin-bottom:8px">⚡ 大模型API网关</h1>
     <p style="color:#8899b4;font-size:13px;margin-bottom:24px">请输入管理员密码</p>
     <div style="background:#131c31;border:1px solid #1e2d4a;border-radius:11px;padding:22px">
       <div style="margin-bottom:14px">
@@ -132,12 +132,17 @@
       <button class="green" style="width:100%;padding:9px" onclick="doLogin()">🔓 登录</button>
       <p id="loginErr" style="color:#ef4444;font-size:12px;margin-top:10px;display:none"></p>
     </div>
+    <p style="margin-top:20px;font-size:13px;color:#64748b">
+      <a href="https://github.com/zhangsuozhu/A2O-Gateway" target="_blank" rel="noopener" style="color:#8899b4;text-decoration:none;transition:color .2s" onmouseover="this.style.color='#e2e8f0'" onmouseout="this.style.color='#8899b4'">⭐ Star on GitHub</a>
+      &nbsp;·&nbsp;
+      <span style="color:#556677">A2O Gateway</span>
+    </p>
   </div>
 </div>
 
 <header>
   <div>
-    <h1>⚡ Claude Code 网关</h1>
+    <h1>⚡ 大模型API网关 <a href="https://github.com/zhangsuozhu/A2O-Gateway" target="_blank" rel="noopener" style="color:#8899b4;text-decoration:none;font-size:12px;font-weight:400;margin-left:4px;transition:color .2s" onmouseover="this.style.color='#e2e8f0'" onmouseout="this.style.color='#8899b4'" title="A2O Gateway on GitHub">⭐ Star</a></h1>
     <div class="sub" id="headerStatus">加载中...</div>
   </div>
   <div class="hdr">
