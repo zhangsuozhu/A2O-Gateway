@@ -47,7 +47,7 @@ Claude Code
 - 支持 `reasoning_content`（OpenAI 推理字段）到 Anthropic `thinking` 块的转换
 - 支持透传模式（`api_mode: "passthrough"`）：跳过协议转换，直接转发 Anthropic 请求体到上游，适用于原生支持 Anthropic Messages API 的厂商
 - 实时终端打印：支持 `"all"`（完整 JSON）和 `"txt"`（纯文本）两种模式
-- 日志文件输出：同时输出到 stderr 和 `gateway.log`
+- 日志文件输出：同时输出到 stderr 和 `/var/log/gateway.log`
 - 使用 `libcurl multi` + worker 线程池（可配置），连接复用上游
 - 使用 `libevent` 提供 HTTP 服务
 - 配置文件热加载（通过 Web UI 修改即时生效）
@@ -82,7 +82,7 @@ make build
 
 ## 运行
 
-先编辑配置：
+先编辑配置（可选，首次启动会自动生成默认配置）：
 
 ```bash
 cp config/gateway.json config/gateway.local.json
@@ -94,7 +94,7 @@ vim config/gateway.local.json
 ```json
 {
   "gateway_api_key": "cc-local-token",
-  "admin_password": "your-admin-password",
+  "admin_password": "",
   "active_model": "qwen-coder",
   "models": [
     {
@@ -108,24 +108,42 @@ vim config/gateway.local.json
 }
 ```
 
-启动（支持 `GATEWAY_CONFIG` 环境变量或命令行参数传配置文件路径）：
+> `admin_password` 默认为空，可直接登录 Web 管理界面。设置后需用新密码登录。
+
+启动：
 
 ```bash
-# 方式一：命令行参数
-./build/cc-oai-gateway ./config/gateway.local.json
-
-# 方式二：环境变量
-export GATEWAY_CONFIG="./config/gateway.local.json"
+# 全默认启动（端口 8081，空密码，4 worker）
 ./build/cc-oai-gateway
+
+# 指定配置文件（首次自动创建默认配置）
+./build/cc-oai-gateway -f ./config/gateway.local.json
+
+# 指定端口、密码、worker 数
+./build/cc-oai-gateway -p 9090 -P mypass -w 6
+
+# 后台守护进程
+./build/cc-oai-gateway -d
+
+# 查看帮助
+./build/cc-oai-gateway -h
 ```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `-f, --file PATH` | 配置文件路径 | `./config/gateway.json` |
+| `-p, --port PORT` | 监听端口 | `8081` |
+| `-P, --password PASS` | Web 管理密码 | 空 |
+| `-w, --workers NUM` | Worker 线程数（1-8） | `4` |
+| `-d, --daemon` | 后台守护进程 | 前台运行 |
+| `-h, --help` | 显示帮助 | — |
+
+也支持 `GATEWAY_CONFIG` 环境变量指定配置文件。
 
 打开 Web 配置界面：
 
 ```text
-http://127.0.0.1:8080/admin
-```
-
-输入 `admin_password` 登录后管理配置。
+http://127.0.0.1:8081/admin
 
 ### Realtime 打印模式
 
@@ -142,7 +160,7 @@ http://127.0.0.1:8080/admin
 Shell 环境变量方式：
 
 ```bash
-export ANTHROPIC_BASE_URL="http://127.0.0.1:8080"
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8081"
 export ANTHROPIC_AUTH_TOKEN="cc-local-token"
 export ANTHROPIC_API_KEY="cc-local-token"
 export ANTHROPIC_MODEL="qwen-coder"
@@ -160,7 +178,7 @@ claude --model qwen-coder
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8080",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8081",
     "ANTHROPIC_AUTH_TOKEN": "cc-local-token",
     "ANTHROPIC_API_KEY": "cc-local-token",
     "ANTHROPIC_MODEL": "qwen-coder",
@@ -176,12 +194,12 @@ claude --model qwen-coder
 
 健康检查：
 ```bash
-curl http://127.0.0.1:8080/healthz
+curl http://127.0.0.1:8081/healthz
 ```
 
 非流式：
 ```bash
-curl http://127.0.0.1:8080/v1/messages \
+curl http://127.0.0.1:8081/v1/messages \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer cc-local-token' \
   -d @examples/anthropic-message.json
@@ -189,7 +207,7 @@ curl http://127.0.0.1:8080/v1/messages \
 
 流式：
 ```bash
-curl -N http://127.0.0.1:8080/v1/messages \
+curl -N http://127.0.0.1:8081/v1/messages \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer cc-local-token' \
   -d @examples/anthropic-stream.json
@@ -197,7 +215,7 @@ curl -N http://127.0.0.1:8080/v1/messages \
 
 工具调用（非流式）：
 ```bash
-curl http://127.0.0.1:8080/v1/messages \
+curl http://127.0.0.1:8081/v1/messages \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer cc-local-token' \
   -d @examples/anthropic-tool.json
@@ -205,7 +223,7 @@ curl http://127.0.0.1:8080/v1/messages \
 
 Token 估算：
 ```bash
-curl http://127.0.0.1:8080/v1/messages/count_tokens \
+curl http://127.0.0.1:8081/v1/messages/count_tokens \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer cc-local-token' \
   -d @examples/anthropic-message.json
@@ -216,16 +234,16 @@ curl http://127.0.0.1:8080/v1/messages/count_tokens \
 请求统计（需先登录获取 session token）：
 ```bash
 # 登录
-curl http://127.0.0.1:8080/admin/api/login \
+curl http://127.0.0.1:8081/admin/api/login \
   -X POST -d '{"password":"your-admin-password"}'
 # 返回 {"token":"xxxxx"}
 
 # 查看统计
-curl http://127.0.0.1:8080/admin/api/stats \
+curl http://127.0.0.1:8081/admin/api/stats \
   -H 'Authorization: Bearer xxxxx'
 
 # 重置统计
-curl http://127.0.0.1:8080/admin/api/stats/reset \
+curl http://127.0.0.1:8081/admin/api/stats/reset \
   -X POST -H 'Authorization: Bearer xxxxx'
 ```
 
@@ -234,11 +252,13 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 ```json
 {
   "listen_host": "0.0.0.0",
-  "listen_port": 8080,
+  "listen_port": 8081,
   "log_level": "info",
   "realtime_print": "false",
   "gateway_api_key": "Claude Code 访问本网关的 token",
-  "admin_password": "Web 管理界面登录密码",
+  "admin_password": "Web 管理界面登录密码（默认为空）",
+  "db_path": "/var/log/gateway.db",
+  "log_file": "/var/log/gateway.log",
   "worker_threads": 4,
   "active_model": "默认模型 id",
   "models": [
@@ -270,13 +290,14 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 | 字段 | 层级 | 类型 | 说明 |
 |------|------|------|------|
 | `listen_host` | 顶层 | string | 监听地址，默认 `0.0.0.0` |
-| `listen_port` | 顶层 | number | 监听端口，默认 `8080` |
+| `listen_port` | 顶层 | number | 监听端口，默认 `8081` |
 | `log_level` | 顶层 | string | 日志级别：`debug`/`info`/`warn`/`error` |
 | `realtime_print` | 顶层 | string | 实时输出模式：`"false"` 关闭、`"all"` 完整 JSON、`"txt"` 纯文本（仅提取对话内容） |
 | `gateway_api_key` | 顶层 | string | Claude Code 认证凭据 |
-| `admin_password` | 顶层 | string | Web 管理界面登录密码，通过 UI 登录后获取 session |
-| `admin_token` | 顶层 | string | 自动与 `admin_password` 同步的 bearer token，修改密码时自动重新生成 |
-| `worker_threads` | 顶层 | number | 工作线程数，范围 1-8 |
+| `admin_password` | 顶层 | string | Web 管理界面登录密码，默认为空，通过 UI 登录后获取 session |
+| `db_path` | 顶层 | string | SQLite 数据库路径，默认 `/var/log/gateway.db` |
+| `log_file` | 顶层 | string | 日志文件路径，默认 `/var/log/gateway.log` |
+| `worker_threads` | 顶层 | number | 工作线程数，范围 1-8，默认 `4` |
 | `active_model` | 顶层 | string | 默认模型 ID |
 | `models[].id` | 模型 | string | Claude Code 侧使用的模型名（`--model` 参数） |
 | `models[].provider` | 模型 | string | 厂商名，仅用于日志/标识 |
@@ -353,7 +374,7 @@ curl http://127.0.0.1:8080/admin/api/stats/reset \
 
 ```bash
 docker build -t cc-oai-gateway:latest .
-docker run --rm -p 8080:8080 \
+docker run --rm -p 8081:8081 \
   -v "$PWD/config/gateway.local.json:/app/config/gateway.json" \
   cc-oai-gateway:latest
 ```
