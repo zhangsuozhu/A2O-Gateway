@@ -12,6 +12,8 @@
 #include "config.h"
 #include "log.h"
 #include <ctype.h>
+#include <errno.h>
+#include <libgen.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -67,9 +69,30 @@ static char *read_file(const char *path, size_t *len_out) {
  *    rename 在 POSIX 上是原子操作，不会出现半写状态
  * 4. 任何中间失败都会删除临时文件，避免残留垃圾
  */
+static int mkdir_p(const char *path) {
+    char tmp[PATH_MAX];
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+            *p = '/';
+        }
+    }
+    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    return 0;
+}
+
 static int write_file_atomic(const char *path, const char *data) {
     char tmp[PATH_MAX];
     snprintf(tmp, sizeof(tmp), "%s.tmp.%ld", path, (long)getpid());
+    /* auto-create parent directories */
+    char *path_copy = strdup(path);
+    if (path_copy) {
+        char *dir = dirname(path_copy);
+        mkdir_p(dir);
+        free(path_copy);
+    }
     FILE *f = fopen(tmp, "wb");
     if (!f) return -1;
     size_t len = strlen(data);
@@ -93,16 +116,18 @@ static int write_file_atomic(const char *path, const char *data) {
  *   - 预置一个 models 条目（阿里云百炼 qwen-coder）
  * 生成后会自动写回磁盘，方便用户在此基础上修改
  */
-static cJSON *default_config(void) {
-    const char *s =
+static cJSON *default_config(long port, const char *password) {
+    char buf[4096];
+    snprintf(buf, sizeof(buf),
         "{"
         "\"listen_host\":\"0.0.0.0\","
-        "\"listen_port\":8080,"
-        "\"log_file\":\"/var/log/cc-oai-gateway.log\","
+        "\"listen_port\":%ld,"
+        "\"db_path\":\"./gateway.db\","
+        "\"log_file\":\"./gateway.log\","
         "\"log_level\":\"info\","
         "\"realtime_print\":\"false\","
         "\"gateway_api_key\":\"cc-local-token\","
-        "\"admin_password\":\"topwalk\","
+        "\"admin_password\":\"%s\","
         "\"worker_threads\":4,"
         "\"active_model\":\"qwen-coder\","
         "\"models\":[{"
@@ -118,8 +143,10 @@ static cJSON *default_config(void) {
           "\"params\":{\"temperature\":0.2,\"top_p\":0.95},"
           "\"extra_body\":{}"
         "}]"
-        "}";
-    return cJSON_Parse(s);
+        "}",
+        port > 0 ? port : 8081,
+        password ? password : "");
+    return cJSON_Parse(buf);
 }
 
 /**
@@ -232,7 +259,7 @@ static void preserve_masked_keys(cJSON *incoming, cJSON *oldroot) {
  *    - 其他   → RT_OFF（关闭）
  * 7. 存储根配置到 G.root，供后续查询
  */
-int config_load(const char *path) {
+int config_load(const char *path, long cli_port, const char *cli_password) {
     pthread_rwlock_init(&G.lock, NULL);
     snprintf(G.path, sizeof(G.path), "%s", path ? path : DEFAULT_CONFIG_PATH);
     size_t n = 0;
@@ -241,7 +268,7 @@ int config_load(const char *path) {
     if (txt) root = cJSON_Parse(txt);
     free(txt);
     if (!root) {
-        root = default_config();
+        root = default_config(cli_port, cli_password);
         char *p = cJSON_Print(root);
         write_file_atomic(G.path, p);
         free(p);
@@ -249,11 +276,34 @@ int config_load(const char *path) {
     }
     /* Back-compat: add admin_password if missing */
     if (!cJSON_GetObjectItemCaseSensitive(root, "admin_password")) {
-        cJSON_AddStringToObject(root, "admin_password", "topwalk");
+        cJSON_AddStringToObject(root, "admin_password", "");
         char *p = cJSON_Print(root);
         write_file_atomic(G.path, p);
         free(p);
         log_msg("INFO", "added default admin_password to config");
+    }
+    bool cli_overrides = false;
+    if (cli_port > 0 && cli_port <= 65535) {
+        cJSON *lp = cJSON_GetObjectItemCaseSensitive(root, "listen_port");
+        if (cJSON_IsNumber(lp)) {
+            cJSON_SetNumberValue(lp, cli_port);
+        } else {
+            cJSON_AddNumberToObject(root, "listen_port", cli_port);
+        }
+        cli_overrides = true;
+    }
+    if (cli_password) {
+        cJSON *ap = cJSON_GetObjectItemCaseSensitive(root, "admin_password");
+        if (cJSON_IsString(ap)) {
+            cJSON_DeleteItemFromObject(root, "admin_password");
+        }
+        cJSON_AddStringToObject(root, "admin_password", cli_password);
+        cli_overrides = true;
+    }
+    if (cli_overrides) {
+        char *p = cJSON_Print(root);
+        write_file_atomic(G.path, p);
+        free(p);
     }
     G.root = root;
     WORKER_COUNT = (int)json_get_long(root, "worker_threads", 4);

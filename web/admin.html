@@ -162,6 +162,8 @@
         <div class="row">
           <div><label>监听端口</label><input id="port" type="number" /></div>
           <div><label>Gateway API Key</label><input id="gwKey" placeholder="Claude Code 用此 token 连接" /></div>
+          <div><label>数据库路径</label><input id="dbPath" placeholder="gateway.db" /></div>
+          <div><label>日志文件</label><input id="logFile" placeholder="gateway.log" /></div>
           <div><label>实时打印</label>
             <select id="realtimePrint">
               <option value="false">关闭</option>
@@ -416,7 +418,6 @@ function checkLogin() {
 
 async function doLogin() {
   var pwd = $('loginPwd').value.trim();
-  if (!pwd) { $('loginErr').textContent = '请输入密码'; $('loginErr').style.display = ''; return; }
   try {
     var r = await fetch('/admin/api/login', {
       method: 'POST',
@@ -516,6 +517,8 @@ function render() {
   cfg.models = cfg.models || [];
   $('port').value = cfg.listen_port || 8080;
   $('gwKey').value = cfg.gateway_api_key || '';
+  $('dbPath').value = cfg.db_path || '';
+  $('logFile').value = cfg.log_file || '';
   $('realtimePrint').value = cfg.realtime_print || 'false';
   $('logLevel').value = cfg.log_level || 'info';
   $('saveBtn').style.display = '';
@@ -682,6 +685,8 @@ function collect() {
   if (!cfg) return;
   cfg.listen_port = Number($('port').value) || 8080;
   cfg.gateway_api_key = $('gwKey').value;
+  cfg.db_path = $('dbPath').value;
+  cfg.log_file = $('logFile').value;
   cfg.realtime_print = $('realtimePrint').value;
   cfg.log_level = $('logLevel').value;
   var arr = [];
@@ -776,7 +781,6 @@ async function confirmPwd() {
   var old = $('pwdOld').value.trim();
   var pw = $('pwdNew').value.trim();
   var cf = $('pwdConfirm').value.trim();
-  if (!old) { toast('请输入当前密码', true); $('pwdOld').focus(); return; }
   if (!pw) { toast('请输入新密码', true); $('pwdNew').focus(); return; }
   if (pw.length < 4) { toast('新密码至少 4 个字符', true); $('pwdNew').focus(); return; }
   if (pw !== cf) { toast('两次密码不一致', true); $('pwdConfirm').focus(); return; }

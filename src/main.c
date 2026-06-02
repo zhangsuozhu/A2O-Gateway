@@ -241,16 +241,26 @@ int main(int argc, char **argv) {
     const char *config_path = getenv("GATEWAY_CONFIG");
     if (!config_path) config_path = DEFAULT_CONFIG_PATH;
     bool daemon_mode = false;
+    long cli_port = -1;
+    const char *cli_password = NULL;
     /* 解析命令行参数：第一个非配置路径参数为 --daemon */
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--daemon") == 0 || strcmp(argv[i], "-d") == 0) {
             daemon_mode = true;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            fprintf(stderr, "Usage: cc-oai-gateway [OPTIONS] [CONFIG_PATH]\n");
-            fprintf(stderr, "  --daemon, -d    Run as background daemon, log to /var/log\n");
-            fprintf(stderr, "  --help, -h      Show this help\n");
-            fprintf(stderr, "  CONFIG_PATH     JSON config file (default: %s)\n", DEFAULT_CONFIG_PATH);
+            fprintf(stderr, "Usage: cc-oai-gateway [OPTIONS]\n");
+            fprintf(stderr, "  -f, --file PATH      Config file path (default: %s)\n", DEFAULT_CONFIG_PATH);
+            fprintf(stderr, "  -p, --port PORT      Listen port (default: 8081)\n");
+            fprintf(stderr, "  -P, --password PASS  Admin web UI password (default: empty)\n");
+            fprintf(stderr, "  -d, --daemon         Run as background daemon\n");
+            fprintf(stderr, "  -h, --help           Show this help\n");
             return 0;
+        } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--file") == 0) {
+            if (i + 1 < argc) config_path = argv[++i];
+        } else if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--port") == 0) {
+            if (i + 1 < argc) cli_port = strtol(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "-P") == 0 || strcmp(argv[i], "--password") == 0) {
+            if (i + 1 < argc) cli_password = argv[++i];
         } else {
             config_path = argv[i];
         }
@@ -259,7 +269,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     if (evthread_use_pthreads() != 0) { fprintf(stderr, "evthread_use_pthreads failed\n"); return 1; }
     curl_global_init(CURL_GLOBAL_DEFAULT);
-    config_load(config_path);
+    config_load(config_path, cli_port, cli_password);
     stats_init();
 
     /* 初始化 SQLite 数据库（持久化统计和历史） */
@@ -279,7 +289,7 @@ int main(int argc, char **argv) {
     }
 
     char *host = config_get_string_copy("listen_host");
-    long port = 8080;
+    long port = 8081;
     /* Read listen_port from config via a temp copy */
     char *cfg_json = config_masked_json();
     cJSON *root = cJSON_Parse(cfg_json ? cfg_json : "{}");
@@ -289,7 +299,6 @@ int main(int argc, char **argv) {
         if (cJSON_IsNumber(p)) port = (long)p->valuedouble;
         cJSON_Delete(root);
     }
-
     workers_start();
     BASE = event_base_new();
     event_base_priority_init(BASE, 1);

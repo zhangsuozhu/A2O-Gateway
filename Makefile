@@ -5,7 +5,7 @@ build:
 	cmake --build build -j
 
 run: build
-	./build/cc-oai-gateway ./config/gateway.json
+	./build/cc-oai-gateway
 
 clean:
 	rm -rf build

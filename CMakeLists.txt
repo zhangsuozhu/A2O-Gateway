@@ -15,6 +15,18 @@ if(NOT EXISTS "${CJSON_INCLUDE_DIRS}/cJSON.h")
     find_path(CJSON_INCLUDE_DIRS cJSON.h /usr/include/cjson /usr/local/include/cjson)
 endif()
 
+# Generate embedded admin.html C file when the source HTML changes
+add_custom_command(
+    OUTPUT ${CMAKE_SOURCE_DIR}/src/generated/admin_html.c
+    COMMAND xxd -i admin.html |
+            sed 's/unsigned char admin_html\\[\\]/unsigned char EMBEDDED_ADMIN_HTML[]/' |
+            sed 's/unsigned int admin_html_len/unsigned int EMBEDDED_ADMIN_HTML_LEN/' >
+            ${CMAKE_SOURCE_DIR}/src/generated/admin_html.c
+    DEPENDS ${CMAKE_SOURCE_DIR}/web/admin.html
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/web
+    COMMENT "Embedding web/admin.html into C source"
+)
+
 set(GATEWAY_SOURCES
     src/main.c
     src/log.c
@@ -26,6 +38,7 @@ set(GATEWAY_SOURCES
     src/stats.c
     src/db.c
     src/sqlite3/sqlite3.c
+    src/generated/admin_html.c
 )
 
 add_executable(cc-oai-gateway ${GATEWAY_SOURCES})
@@ -64,4 +77,4 @@ target_link_directories(mock_server PRIVATE ${LIBEVENT_LIBRARY_DIRS})
 target_link_libraries(mock_server PRIVATE ${LIBEVENT_LIBRARIES})
 
 install(TARGETS cc-oai-gateway mock_server DESTINATION bin)
-install(DIRECTORY web config DESTINATION share/cc-oai-gateway)
+install(DIRECTORY config DESTINATION share/cc-oai-gateway)

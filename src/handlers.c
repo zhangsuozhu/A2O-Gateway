@@ -18,6 +18,7 @@
 #include "worker.h"
 #include "stats.h"
 #include "db.h"
+#include "admin_html_embedded.h"
 #include "log.h"
 #include <event2/event.h>
 #include <event2/buffer.h>
@@ -934,27 +935,52 @@ static void handle_error_logs(struct evhttp_request *req) {
  * @brief 返回管理后台 HTML 页面
  * @param req HTTP 请求对象
  *
- * 从 ./web/admin.html 读取单文件 HTML/JS 管理界面。
- * 若文件不存在，返回简单的占位提示。
+ * 返回内嵌在二进制中的单文件 HTML/JS 管理界面。
  * 输出头包含强缓存禁用指令（Cache-Control: no-cache 等）。
  */
-static void handle_admin_html(struct evhttp_request *req) {
-    size_t n = 0;
-    char *html = NULL;
-    FILE *f = fopen("./web/admin.html", "rb");
-    if (f) {
-        if (fseek(f, 0, SEEK_END) == 0) {
-            n = (size_t)ftell(f);
-            rewind(f);
-            html = (char *)calloc(1, n + 1);
-        size_t fread_n = 0;
-        if (html && n > 0) { fread_n = fread(html, 1, n, f); (void)fread_n; }
-        }
-        fclose(f);
+/**
+ * @brief 修改管理员密码（/admin/api/change-password POST）
+ * @param req HTTP 请求对象
+ *
+ * 需提供 {old_password, new_password}，验证旧密码后更新配置并持久化。
+ * 空旧密码时允许直接设置新密码（首次设置场景）。
+ */
+static void handle_admin_change_password(struct evhttp_request *req) {
+    if (!admin_auth_ok(req)) { send_error_json(req, 401, "authentication_error", "admin login required"); return; }
+    char *body = read_request_body(req, MAX_BODY_BYTES);
+    cJSON *j = body ? cJSON_Parse(body) : NULL;
+    const char *old_pwd = j ? json_get_str(j, "old_password") : NULL;
+    const char *new_pwd = j ? json_get_str(j, "new_password") : NULL;
+    if (!new_pwd || strlen(new_pwd) < 4) {
+        send_error_json(req, 400, "bad_request", "new_password must be at least 4 characters");
+        cJSON_Delete(j); free(body); return;
     }
-    if (!html) html = xstrdup("<html><body><h1>admin.html not found</h1></body></html>");
+    char *expected = config_get_string_copy("admin_password");
+    bool ok = false;
+    if (expected && old_pwd && constant_time_eq(expected, old_pwd)) ok = true;
+    if (!expected || expected[0] == '\0') ok = true; /* empty current password: allow any */
+    free(expected);
+    if (!ok) {
+        send_error_json(req, 401, "authentication_error", "old password incorrect");
+        cJSON_Delete(j); free(body); return;
+    }
+    char *err = NULL;
+    int rc = config_set_string("admin_password", new_pwd, &err);
+    if (rc != 0) {
+        send_error_json(req, 500, "internal_error", err ? err : "failed to persist password");
+        free(err);
+    } else {
+        cJSON *out = cJSON_CreateObject();
+        cJSON_AddBoolToObject(out, "ok", true);
+        send_json(req, 200, out);
+        cJSON_Delete(out);
+    }
+    cJSON_Delete(j); free(body);
+}
+
+static void handle_admin_html(struct evhttp_request *req) {
     struct evbuffer *out = evbuffer_new();
-    evbuffer_add_printf(out, "%s", html ? html : "");
+    evbuffer_add(out, EMBEDDED_ADMIN_HTML, EMBEDDED_ADMIN_HTML_LEN);
     struct evkeyvalq *h = evhttp_request_get_output_headers(req);
     evhttp_add_header(h, "Content-Type", "text/html; charset=utf-8");
     evhttp_add_header(h, "Cache-Control", "no-cache, no-store, must-revalidate");
@@ -962,7 +988,6 @@ static void handle_admin_html(struct evhttp_request *req) {
     evhttp_add_header(h, "Expires", "0");
     evhttp_send_reply(req, 200, "OK", out);
     evbuffer_free(out);
-    free(html);
 }
 
 /**
@@ -1020,6 +1045,7 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/admin/api/daily") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_daily(req); return; }
     if (URI_IS("/admin/api/debug") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_debug(req); return; }
     if (URI_IS("/admin/api/error_logs") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_error_logs(req); return; }
+    if (URI_IS("/admin/api/change-password") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_admin_change_password(req); return; }
 #undef URI_IS
     send_error_json(req, 404, "not_found", "not found");
 }
