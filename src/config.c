@@ -545,3 +545,11 @@ bool config_get_prompt_tokens_includes_cache(const cJSON *model_cfg, bool defaul
     if (cJSON_IsFalse(n)) return false;
     return default_val;
 }
+
+bool config_get_strip_reasoning_content(const cJSON *model_cfg) {
+    if (!model_cfg) return false;
+    const cJSON *n = cJSON_GetObjectItemCaseSensitive(model_cfg, "strip_reasoning_content");
+    if (cJSON_IsTrue(n)) return true;
+    if (cJSON_IsFalse(n)) return false;
+    return false;
+}

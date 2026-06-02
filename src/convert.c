@@ -447,6 +447,7 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
         convert_inject_system_cache(sys, system, model_cfg);
     }
 
+    bool strip_rc = config_get_strip_reasoning_content(model_cfg);
     cJSON *anth_messages = cJSON_GetObjectItemCaseSensitive(anth_req, "messages");
     if (cJSON_IsArray(anth_messages)) {
         cJSON *m;
@@ -466,6 +467,7 @@ cJSON *build_openai_request(cJSON *anth_req, cJSON *model_cfg) {
                     }
                 }
             }
+            if (strip_rc && role && strcmp(role, "assistant") == 0) rc = NULL;
             convert_message_content_blocks(messages, role, content, rc);
         }
     }

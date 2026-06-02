@@ -120,4 +120,15 @@ int config_get_min_cache_tokens(const cJSON *model_cfg);
  */
 bool config_get_prompt_tokens_includes_cache(const cJSON *model_cfg, bool default_val);
 
+/**
+ * config_get_strip_reasoning_content() — 读取模型配置中的 reasoning_content 剥离开关
+ * @param model_cfg: 单个模型配置 cJSON 对象
+ * @return: true= 构建上游请求时剥离 assistant message 的 reasoning_content
+ *          false= 默认，透传 reasoning_content（向后兼容）
+ *
+ * Why: DeepSeek 等上游会将重新发送的 reasoning_content 计费为 prompt input
+ * 且不参与 prefix cache，剥离后每轮可节省数百 token。
+ */
+bool config_get_strip_reasoning_content(const cJSON *model_cfg);
+
 #endif

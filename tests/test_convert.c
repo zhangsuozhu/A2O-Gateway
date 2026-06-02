@@ -445,6 +445,68 @@ static int test_pt_none_error_response_includes_model(void) {
     return failed;
 }
 
+static int test_default_preserves_reasoning_content(void) {
+    const char *anth_json =
+        "{"
+        "\"model\":\"gateway-model\","
+        "\"messages\":["
+        "  {\"role\":\"user\",\"content\":\"hello\"},"
+        "  {\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"deep thought\"},{\"type\":\"text\",\"text\":\"hi\"}]}"
+        "]"
+        "}";
+    const char *cfg_json = "{\"upstream_model\":\"upstream-model\"}";
+
+    cJSON *anth = cJSON_Parse(anth_json);
+    cJSON *cfg = cJSON_Parse(cfg_json);
+    cJSON *out = build_openai_request(anth, cfg);
+    char *printed = cJSON_PrintUnformatted(out);
+    int failed = 0;
+
+    if (!printed) {
+        failed = 1;
+    } else if (!strstr(printed, "\"reasoning_content\"")) {
+        fprintf(stderr, "default should preserve reasoning_content from thinking block, got: %s\n", printed);
+        failed = 1;
+    }
+
+    free(printed);
+    cJSON_Delete(out);
+    cJSON_Delete(anth);
+    cJSON_Delete(cfg);
+    return failed;
+}
+
+static int test_strip_reasoning_content_when_enabled(void) {
+    const char *anth_json =
+        "{"
+        "\"model\":\"gateway-model\","
+        "\"messages\":["
+        "  {\"role\":\"user\",\"content\":\"hello\"},"
+        "  {\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"deep thought\"},{\"type\":\"text\",\"text\":\"hi\"}]}"
+        "]"
+        "}";
+    const char *cfg_json = "{\"upstream_model\":\"upstream-model\",\"strip_reasoning_content\":true}";
+
+    cJSON *anth = cJSON_Parse(anth_json);
+    cJSON *cfg = cJSON_Parse(cfg_json);
+    cJSON *out = build_openai_request(anth, cfg);
+    char *printed = cJSON_PrintUnformatted(out);
+    int failed = 0;
+
+    if (!printed) {
+        failed = 1;
+    } else if (strstr(printed, "\"reasoning_content\"")) {
+        fprintf(stderr, "strip_reasoning_content=true should remove reasoning_content, got: %s\n", printed);
+        failed = 1;
+    }
+
+    free(printed);
+    cJSON_Delete(out);
+    cJSON_Delete(anth);
+    cJSON_Delete(cfg);
+    return failed;
+}
+
 int main(void) {
     int failed = 0;
     failed |= test_overlapping_request_fields_are_replaced();
@@ -460,5 +522,7 @@ int main(void) {
     failed |= test_pt_anthropic_passthrough_error_response_includes_model();
     failed |= test_pt_openai_passthrough_error_response_includes_model();
     failed |= test_pt_none_error_response_includes_model();
+    failed |= test_default_preserves_reasoning_content();
+    failed |= test_strip_reasoning_content_when_enabled();
     return failed ? 1 : 0;
 }

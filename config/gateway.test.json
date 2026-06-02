@@ -5,6 +5,7 @@
 	"realtime_print":	"false",
 	"gateway_api_key":	"",
 	"worker_threads":	4,
+	"active_model":	"mock-model",
 	"models":	[{
 			"id":	"mock-model",
 			"provider":	"mock",
@@ -13,13 +14,14 @@
 			"base_url":	"http://127.0.0.1:9000/v1",
 			"upstream_model":	"mock-model",
 			"api_key":	"",
-			"extra_body":	{},
+			"extra_body":	{
+			},
 			"params":	{
 				"temperature":	0.2,
 				"top_p":	0.95,
 				"max_tokens":	4096
-			}
+			},
+			"strip_reasoning_content":	true
 		}],
-	"active_model":	"mock-model",
 	"admin_password":	""
 }

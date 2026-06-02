@@ -42,6 +42,13 @@
     .badge.off{background:rgba(239,68,68,.12);color:#ef4444}
     .g2{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:7px}
     .g3{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:7px}
+    .fg2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .fg4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
+    .sect{font-size:11px;color:#64748b;font-weight:600;margin:14px 0 8px;padding-top:10px;border-top:1px solid #1e2d4a;letter-spacing:.3px}
+    .sect:first-of-type{margin-top:0;padding-top:0;border-top:none}
+    .hint{font-size:10px;color:#64748b;margin-top:2px;line-height:1.4}
+    @media(max-width:900px){.fg4{grid-template-columns:1fr 1fr}}
+    @media(max-width:600px){.fg2,.fg4{grid-template-columns:1fr}}
     .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#131c31;border:1px solid #22c55e;color:#86efac;padding:9px 18px;border-radius:7px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
     .toast.show{opacity:1}
     .toast.err{border-color:#ef4444;color:#fca5a5}
@@ -591,44 +598,50 @@ function createModel(m, i) {
   html += '</div>';
 
   // 基本信息
-  html += '<div class="g3" style="margin-bottom:6px">';
+  html += '<div class="sect">基本信息</div>';
+  html += '<div class="fg4">';
   html += '  <div><label>模型 ID</label><input class="fi" data-idx="' + i + '" data-k="id" value="' + escAttr(m.id) + '" /></div>';
-  html += '  <div><label>模型厂商</label><input class="fi" data-idx="' + i + '" data-k="provider" value="' + escAttr(m.provider || '') + '" placeholder="aliyun, deepseek" /></div>';
-  html += '  <div><label>优先级</label><input class="fi" data-idx="' + i + '" data-k="priority" value="' + escAttr(m.priority || '100') + '" type="number" min="0" max="1000" placeholder="0-1000，小的优先" /></div>';
+  html += '  <div><label>厂商</label><input class="fi" data-idx="' + i + '" data-k="provider" value="' + escAttr(m.provider || '') + '" placeholder="aliyun, deepseek" /></div>';
+  html += '  <div><label>优先级 <span style="color:#64748b;font-weight:400">0-1000</span></label><input class="fi" data-idx="' + i + '" data-k="priority" value="' + escAttr(m.priority != null ? m.priority : '100') + '" type="number" min="0" max="1000" /></div>';
   html += '  <div><label>状态</label><select class="fi" data-idx="' + i + '" data-k="enabled"><option value="true"' + (en?' selected':'') + '>启用</option><option value="false"' + (!en?' selected':'') + '>禁用</option></select></div>';
   html += '</div>';
 
-  // 接口信息
-  html += '<div class="g3" style="margin-bottom:6px">';
+  // 接口连接
+  html += '<div class="sect">接口连接</div>';
+  html += '<div class="fg2">';
   html += '  <div><label>Base URL</label><input class="fi" data-idx="' + i + '" data-k="base_url" value="' + escAttr(m.base_url || '') + '" placeholder="https://api.example.com/v1" /></div>';
-  html += '  <div><label>Endpoint（可选）</label><input class="fi" data-idx="' + i + '" data-k="endpoint" value="' + escAttr(m.endpoint || '') + '" placeholder="留空则用 Base URL + /chat/completions" /></div>';
-  html += '  <div><label>上游模型名</label><input class="fi" data-idx="' + i + '" data-k="upstream_model" value="' + escAttr(m.upstream_model || '') + '" placeholder="如 qwen3-coder-plus" /></div>';
+  html += '  <div><label>Endpoint <span style="color:#64748b;font-weight:400">可选</span></label><input class="fi" data-idx="' + i + '" data-k="endpoint" value="' + escAttr(m.endpoint || '') + '" placeholder="留空则自动拼接 /chat/completions" /></div>';
+  html += '  <div><label>上游模型名</label><input class="fi" data-idx="' + i + '" data-k="upstream_model" value="' + escAttr(m.upstream_model || '') + '" placeholder="qwen3-coder-plus" /></div>';
   html += '  <div><label>API 模式</label><select class="fi" data-idx="' + i + '" data-k="api_mode"><option value=""' + (m.api_mode ? '' : ' selected') + '>OpenAI 兼容</option><option value="passthrough"' + (m.api_mode === 'passthrough' ? ' selected' : '') + '>Anthropic 透传</option></select></div>';
-  html += '  <div><label>API Key</label><input class="fi" data-idx="' + i + '" data-k="api_key" value="' + escAttr(m.api_key || '') + '" type="text" style="font-family:monospace" /></div>';
+  html += '  <div style="grid-column:1/-1"><label>API Key</label><input class="fi" data-idx="' + i + '" data-k="api_key" value="' + escAttr(m.api_key || '') + '" type="text" style="font-family:monospace" /></div>';
   html += '</div>';
-  html += '<div style="font-size:11px;color:#8b9dc3;margin-bottom:6px" id="url-hint-' + i + '">\u2192 ' + escAttr(fmtUpstreamUrl(m.base_url || '', m.endpoint || '', m.api_mode || '')) + '</div>';
+  html += '<div style="font-size:11px;color:#8b9dc3;margin-top:4px" id="url-hint-' + i + '">→ ' + escAttr(fmtUpstreamUrl(m.base_url || '', m.endpoint || '', m.api_mode || '')) + '</div>';
 
-  // 参数
-  html += '<div class="g2" style="margin-bottom:5px">';
+  // 模型参数
+  html += '<div class="sect">模型参数</div>';
+  html += '<div class="fg4">';
   html += '  <div><label>Temperature</label><input class="fp" data-idx="' + i + '" data-k="temperature" type="number" step="0.01" min="0" max="2" value="' + (m.params && m.params.temperature != null ? m.params.temperature : '') + '" placeholder="0.2" /></div>';
   html += '  <div><label>Top P</label><input class="fp" data-idx="' + i + '" data-k="top_p" type="number" step="0.01" min="0" max="1" value="' + (m.params && m.params.top_p != null ? m.params.top_p : '') + '" placeholder="0.95" /></div>';
-  html += '  <div><label>Max Tokens</label><input class="fp" data-idx="' + i + '" data-k="max_tokens" type="number" step="1" min="1" value="' + (m.params && m.params.max_tokens != null ? m.params.max_tokens : '') + '" placeholder="默认" /></div>';
+  html += '  <div><label>Max Tokens</label><input class="fp" data-idx="' + i + '" data-k="max_tokens" type="number" step="1" min="1" value="' + (m.params && m.params.max_tokens != null ? m.params.max_tokens : '') + '" placeholder="4096" /></div>';
   var stopVal = '';
   if (m.params && m.params.stop) {
     stopVal = Array.isArray(m.params.stop) ? m.params.stop.join(',') : String(m.params.stop);
   }
-  html += '  <div><label>Stop（逗号分隔）</label><input class="fp" data-idx="' + i + '" data-k="stop" value="' + escAttr(stopVal) + '" placeholder="如: Human:, Assistant:" /></div>';
+  html += '  <div><label>Stop <span style="color:#64748b;font-weight:400">逗号分隔</span></label><input class="fp" data-idx="' + i + '" data-k="stop" value="' + escAttr(stopVal) + '" placeholder="Human:, Assistant:" /></div>';
   html += '</div>';
 
-  // 提示词缓存
-  html += '<div class="g3" style="margin-bottom:5px">';
-  html += '  <div><label>缓存策略</label><select class="fi" data-idx="' + i + '" data-k="cache_policy"><option value="off"' + (m.cache_policy !== 'auto' ? ' selected' : '') + '>off（关闭）</option><option value="auto"' + (m.cache_policy === 'auto' ? ' selected' : '') + '>auto（自动注入）</option></select></div>';
-  html += '  <div><label>缓存阈值（tokens）</label><input class="fi" data-idx="' + i + '" data-k="min_cache_tokens" type="number" step="1" min="0" value="' + (m.min_cache_tokens || '1024') + '" placeholder="1024" /></div>';
-  html += '  <div><label title="OpenAI/Anthropic/DeepSeek 默认已包含；Moonshot 默认不包含">prompt_tokens 含缓存</label><select class="fi" data-idx="' + i + '" data-k="prompt_tokens_includes_cache"><option value="true"' + (m.prompt_tokens_includes_cache !== false ? ' selected' : '') + '>是（默认）</option><option value="false"' + (m.prompt_tokens_includes_cache === false ? ' selected' : '') + '>否（Moonshot）</option></select></div>';
+  // 高级设置
+  html += '<div class="sect">高级设置</div>';
+  html += '<div class="fg2">';
+  html += '  <div><label>缓存策略</label><div class="hint">auto 时在 system 消息中注入 cache_control，上游按缓存 creation + read 计费</div><select class="fi" data-idx="' + i + '" data-k="cache_policy"><option value="off"' + (m.cache_policy !== 'auto' ? ' selected' : '') + '>off</option><option value="auto"' + (m.cache_policy === 'auto' ? ' selected' : '') + '>auto</option></select></div>';
+  html += '  <div><label>缓存阈值 (tokens)</label><div class="hint">system prompt 超过此 token 数时才注入 cache_control，避免短提示浪费缓存写入成本</div><input class="fi" data-idx="' + i + '" data-k="min_cache_tokens" type="number" step="1" min="0" value="' + (m.min_cache_tokens || '1024') + '" placeholder="1024" /></div>';
+  html += '  <div><label>剥离 reasoning_content</label><div class="hint">开启后移除 assistant message 中的 reasoning_content，避免被上游计费为 prompt input</div><select class="fi" data-idx="' + i + '" data-k="strip_reasoning_content"><option value="false"' + (m.strip_reasoning_content !== true ? ' selected' : '') + '>关闭</option><option value="true"' + (m.strip_reasoning_content === true ? ' selected' : '') + '>开启</option></select></div>';
+  html += '  <div><label>prompt_tokens 含缓存</label><div class="hint">是 = 上游 prompt_tokens 已含缓存（DeepSeek/OpenAI/Anthropic）。否 = 需网关合并（Moonshot）</div><select class="fi" data-idx="' + i + '" data-k="prompt_tokens_includes_cache"><option value="true"' + (m.prompt_tokens_includes_cache !== false ? ' selected' : '') + '>是</option><option value="false"' + (m.prompt_tokens_includes_cache === false ? ' selected' : '') + '>否 (Moonshot)</option></select></div>';
   html += '</div>';
 
-  // extra_body
-  html += '<div><label style="font-weight:400;text-transform:none">extra_body JSON（厂商扩展）</label>';
+  // 扩展配置
+  html += '<div class="sect">扩展配置</div>';
+  html += '<div><label>extra_body <span style="color:#64748b;font-weight:400">JSON</span></label>';
   html += '<textarea class="fi" data-idx="' + i + '" data-k="extra_body" rows="2" placeholder=\'{"enable_search":true}\'>' + esc(JSON.stringify(m.extra_body || {}, null, 2)) + '</textarea></div>';
 
   div.innerHTML = html;
@@ -661,6 +674,7 @@ function collectOne(i) {
     var k = el.getAttribute('data-k');
     if (k === 'enabled') m[k] = el.value === 'true';
     else if (k === 'prompt_tokens_includes_cache') m[k] = el.value === 'true';
+    else if (k === 'strip_reasoning_content') m[k] = el.value === 'true';
     else if (k === 'priority') m[k] = Number(el.value);
     else if (k === 'min_cache_tokens') m[k] = Number(el.value) || 1024;
     else if (k === 'extra_body') { try { m[k] = el.value.trim() ? JSON.parse(el.value) : {}; } catch(e) {} }

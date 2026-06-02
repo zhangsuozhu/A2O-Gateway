@@ -21,6 +21,7 @@ Claude Code
 - 向上游请求：
   - OpenAI-compatible Chat Completions（默认）：拼接 `{base_url}/chat/completions`，Anthropic 格式自动转换为 OpenAI 格式
   - Anthropic Messages 透传（`api_mode: "passthrough"`）：拼接 `{base_url}/v1/messages`，直接转发 Anthropic 请求体，适合原生支持 Anthropic 格式的上游（如 Kimi）
+  - OpenAI Chat Completions 透传：`POST /v1/chat/completions` 直接按 OpenAI 格式透传到上游，用于 OpenAI SDK 或非 Claude Code 客户端
   - 也可配置完整 `endpoint` 覆盖 URL
 - 多模型、多厂商配置（实时生效）：
   - `id`: Claude Code 侧看到的模型名
@@ -45,7 +46,7 @@ Claude Code
 - 支持流式 SSE 转换：OpenAI chunk -> Anthropic stream events；透传模式下保持原始流式格式
 - 支持工具调用转换：Anthropic tools/tool_use <-> OpenAI tools/tool_calls，流式+非流式
 - 支持 `reasoning_content`（OpenAI 推理字段）到 Anthropic `thinking` 块的转换
-- 支持透传模式（`api_mode: "passthrough"`）：跳过协议转换，直接转发 Anthropic 请求体到上游，适用于原生支持 Anthropic Messages API 的厂商
+- 支持剥离 `reasoning_content`：对 DeepSeek 等上游，开启后构建请求时移除 assistant message 中的 `reasoning_content`，避免其被重复计费为不参与缓存的 prompt input
 - 实时终端打印：支持 `"all"`（完整 JSON）和 `"txt"`（纯文本）两种模式
 - 日志文件输出：同时输出到 stderr 和 `/var/log/gateway.log`
 - 使用 `libcurl multi` + worker 线程池（可配置），连接复用上游
@@ -266,7 +267,7 @@ curl http://127.0.0.1:8081/admin/api/stats/reset \
       "id": "Claude Code 侧使用的模型名",
       "provider": "厂商名，仅用于标识和日志",
       "priority": 100,
-      "interface": "openai_chat_completions",
+      "api_mode": "openai_chat_completions",
       "base_url": "OpenAI 兼容 base_url，例如 https://api.example.com/v1",
       "endpoint": "完整接口地址，可空；非空时优先使用",
       "api_key": "上游模型厂商 API Key",
@@ -313,6 +314,7 @@ curl http://127.0.0.1:8081/admin/api/stats/reset \
 | `models[].cache_policy` | 模型 | string | 缓存策略：`"off"`（默认）或 `"auto"`。`"auto"` 自动注入 `cache_control: {type: "ephemeral"}` |
 | `models[].min_cache_tokens` | 模型 | number | 自动缓存注入阈值（token 数），默认 1024 |
 | `models[].prompt_tokens_includes_cache` | 模型 | bool | `true`（默认）表示 `prompt_tokens` 已包含缓存 token。`false` 时网关自行合并 `pt + cr + cc`（如 Moonshot） |
+| `models[].strip_reasoning_content` | 模型 | bool | `false`（默认）表示透传 assistant message 中的 `reasoning_content`。`true` 时构建上游请求前将其剥离，避免 DeepSeek 等上游将其计费为不参与缓存的 prompt input |
 
 ## API 端点
 
