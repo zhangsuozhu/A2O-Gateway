@@ -276,7 +276,14 @@ int main(int argc, char **argv) {
     config_load(config_path, cli_port, cli_password, cli_workers);
     stats_init();
 
-    /* 初始化 SQLite 数据库（持久化统计和历史） */
+    /* 精灵模式：fork 到后台运行（必须在创建任何线程之前执行） */
+    if (daemon_mode) {
+        daemon_fork();
+    }
+
+    /* 初始化 SQLite 数据库（持久化统计和历史）
+     * 必须在 daemon_fork() 之后，因为 db_init() 会创建批量写入线程，
+     * 而 fork() 不会复制子进程中的其他线程 */
     char *db_path = config_get_string_copy("db_path");
     db_init(db_path ? db_path : "/var/log/gateway.db");
     free(db_path);
@@ -286,11 +293,6 @@ int main(int argc, char **argv) {
     const char *log_path = log_file ? log_file : "/var/log/gateway.log";
     log_open(log_path);
     free(log_file);
-
-    /* 精灵模式：fork 到后台运行 */
-    if (daemon_mode) {
-        daemon_fork();
-    }
 
     char *host = config_get_string_copy("listen_host");
     long port = 8081;
