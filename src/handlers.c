@@ -236,7 +236,52 @@ static void send_text(struct evhttp_request *req, int code, const char *ct, cons
  *
  * 构造 { "error": { "type": ..., "message": ... } } 结构并发送。
  */
+static const char *http_method_str(struct evhttp_request *req) {
+    switch (evhttp_request_get_command(req)) {
+        case EVHTTP_REQ_GET:     return "GET";
+        case EVHTTP_REQ_POST:    return "POST";
+        case EVHTTP_REQ_PUT:     return "PUT";
+        case EVHTTP_REQ_DELETE:  return "DELETE";
+        case EVHTTP_REQ_HEAD:    return "HEAD";
+        case EVHTTP_REQ_OPTIONS: return "OPTIONS";
+        case EVHTTP_REQ_PATCH:   return "PATCH";
+        default:                 return "OTHER";
+    }
+}
+
 static void send_error_json(struct evhttp_request *req, int code, const char *type, const char *msg) {
+    const char *uri = evhttp_request_get_uri(req);
+    const char *meth = http_method_str(req);
+    char *client_addr = NULL;
+    ev_uint16_t client_port = 0;
+    struct evhttp_connection *conn = evhttp_request_get_connection(req);
+    if (conn) {
+        evhttp_connection_get_peer(conn, &client_addr, &client_port);
+    }
+
+    /* 尝试从 input buffer 读取 body 预览（尚未被 read_request_body 消费时） */
+    struct evbuffer *in = evhttp_request_get_input_buffer(req);
+    size_t in_len = in ? evbuffer_get_length(in) : 0;
+    char body_preview[2049] = {0};
+    if (in_len > 0) {
+        size_t copy_len = in_len > 2048 ? 2048 : in_len;
+        evbuffer_copyout(in, body_preview, copy_len);
+        body_preview[copy_len] = 0;
+    }
+
+    if (body_preview[0]) {
+        log_msg("ERROR", "CLIENT_ERROR client=%s:%d method=%s uri=%s code=%d type=%s msg=%s body_preview=%s",
+                client_addr ? client_addr : "unknown", (int)client_port,
+                meth, uri ? uri : "(null)", code,
+                type ? type : "api_error", msg ? msg : "error",
+                body_preview);
+    } else {
+        log_msg("ERROR", "CLIENT_ERROR client=%s:%d method=%s uri=%s code=%d type=%s msg=%s",
+                client_addr ? client_addr : "unknown", (int)client_port,
+                meth, uri ? uri : "(null)", code,
+                type ? type : "api_error", msg ? msg : "error");
+    }
+
     cJSON *j = cJSON_CreateObject();
     cJSON *err = cJSON_CreateObject();
     cJSON_AddStringToObject(err, "type", type ? type : "api_error");
@@ -310,11 +355,11 @@ static void handle_messages(struct evhttp_request *req) {
     char *body = read_request_body(req, MAX_BODY_BYTES);
     if (!body) { log_msg("WARN", "messages body too large"); send_error_json(req, 413, "request_too_large", "request body too large"); return; }
     cJSON *anth = cJSON_Parse(body);
-    if (!anth) { log_msg("WARN", "messages invalid JSON body"); free(body); send_error_json(req, 400, "invalid_request_error", "invalid JSON"); return; }
+    if (!anth) { log_msg("WARN", "messages invalid JSON body: %s", body); free(body); send_error_json(req, 400, "invalid_request_error", "invalid JSON"); return; }
     const char *requested_model = json_get_str(anth, "model");
     cJSON *model = config_select_model_copy(requested_model);
     if (!model) {
-        log_msg("WARN", "no enabled model found for requested_model=%s", requested_model ? requested_model : "(null)");
+        log_msg("WARN", "no enabled model found for requested_model=%s body=%s", requested_model ? requested_model : "(null)", body);
         cJSON_Delete(anth); free(body); send_error_json(req, 503, "configuration_error", "no enabled model configured"); return;
     }
     const char *api_mode = json_get_str(model, "api_mode");
@@ -428,11 +473,11 @@ static void handle_chat_completions(struct evhttp_request *req) {
     char *body = read_request_body(req, MAX_BODY_BYTES);
     if (!body) { log_msg("WARN", "chat/completions body too large"); send_error_json(req, 413, "request_too_large", "request body too large"); return; }
     cJSON *oai_req = cJSON_Parse(body);
-    if (!oai_req) { log_msg("WARN", "chat/completions invalid JSON body"); free(body); send_error_json(req, 400, "invalid_request_error", "invalid JSON"); return; }
+    if (!oai_req) { log_msg("WARN", "chat/completions invalid JSON body: %s", body); free(body); send_error_json(req, 400, "invalid_request_error", "invalid JSON"); return; }
     const char *requested_model = json_get_str(oai_req, "model");
     cJSON *model = config_select_model_copy(requested_model);
     if (!model) {
-        log_msg("WARN", "no enabled model found for requested_model=%s", requested_model ? requested_model : "(null)");
+        log_msg("WARN", "no enabled model found for requested_model=%s body=%s", requested_model ? requested_model : "(null)", body);
         cJSON_Delete(oai_req); free(body); send_error_json(req, 503, "configuration_error", "no enabled model configured"); return;
     }
     /* OpenAI 透传：替换 model 为 upstream_model 后直接转发 */
@@ -556,7 +601,7 @@ static void handle_count_tokens(struct evhttp_request *req) {
     char *body = read_request_body(req, MAX_BODY_BYTES);
     if (!body) { send_error_json(req, 413, "request_too_large", "request body too large"); return; }
     cJSON *j = cJSON_Parse(body);
-    if (!j) { free(body); send_error_json(req, 400, "invalid_request_error", "invalid JSON"); return; }
+    if (!j) { log_msg("WARN", "count_tokens invalid JSON body: %s", body); free(body); send_error_json(req, 400, "invalid_request_error", "invalid JSON"); return; }
     cJSON *out = cJSON_CreateObject();
     cJSON_AddNumberToObject(out, "input_tokens", estimate_tokens_from_json(j));
     send_json(req, 200, out);
@@ -628,8 +673,12 @@ static void handle_config_put(struct evhttp_request *req) {
     if (!body) { send_error_json(req, 413, "request_too_large", "request body too large"); return; }
     char *err = NULL;
     int rc = config_replace_from_json(body, &err);
+    if (rc != 0) {
+        log_msg("WARN", "config_replace failed: %s body=%s", err ? err : "failed", body);
+        free(body);
+        send_error_json(req, 400, "configuration_error", err ? err : "failed"); free(err); return;
+    }
     free(body);
-    if (rc != 0) { send_error_json(req, 400, "configuration_error", err ? err : "failed"); free(err); return; }
     cJSON *ok = cJSON_CreateObject();
     cJSON_AddBoolToObject(ok, "ok", true);
     send_json(req, 200, ok);
@@ -650,8 +699,15 @@ static void handle_switch(struct evhttp_request *req) {
     const char *active = j ? json_get_str(j, "active_model") : NULL;
     char *err = NULL;
     int rc = config_set_active_model(active, &err);
-    if (rc != 0) send_error_json(req, 400, "configuration_error", err ? err : "failed");
-    else { cJSON *ok = cJSON_CreateObject(); cJSON_AddBoolToObject(ok, "ok", true); send_json(req, 200, ok); cJSON_Delete(ok); }
+    if (rc != 0) {
+        log_msg("WARN", "config_set_active_model failed: %s body=%s", err ? err : "failed", body ? body : "(null)");
+        send_error_json(req, 400, "configuration_error", err ? err : "failed");
+    } else {
+        cJSON *ok = cJSON_CreateObject();
+        cJSON_AddBoolToObject(ok, "ok", true);
+        send_json(req, 200, ok);
+        cJSON_Delete(ok);
+    }
     free(err); cJSON_Delete(j); free(body);
 }
 
@@ -1030,6 +1086,7 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (URI_IS("/healthz") || URI_IS("/readyz")) { handle_health(req); return; }
     if (URI_IS("/v1/messages")) { handle_messages(req); return; }
     if (URI_IS("/v1/chat/completions")) { handle_chat_completions(req); return; }
+    if (URI_IS("/chat/completions")) { handle_chat_completions(req); return; }
     if (URI_IS("/v1/messages/count_tokens")) { handle_count_tokens(req); return; }
     if (URI_IS("/v1/models") || URI_IS("/v1/models/")) { handle_models(req); return; }
     if (URI_IS("/admin/api/login") && evhttp_request_get_command(req) == EVHTTP_REQ_POST) { handle_admin_login(req); return; }
