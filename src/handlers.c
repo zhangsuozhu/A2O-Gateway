@@ -21,7 +21,10 @@
 #include "admin_html_embedded.h"
 #include "log.h"
 #include <event2/event.h>
+#include <event2/http.h>
+#include <event2/keyvalq_struct.h>
 #include <event2/buffer.h>
+#include <sys/queue.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -36,6 +39,14 @@
  */
 static const char *header_get(struct evhttp_request *req, const char *name) {
     return evhttp_find_header(evhttp_request_get_input_headers(req), name);
+}
+
+static void log_request_headers(struct evhttp_request *req) {
+    struct evkeyvalq *headers = evhttp_request_get_input_headers(req);
+    struct evkeyval *header;
+    TAILQ_FOREACH(header, headers, next) {
+        log_msg("DEBUG", "REQ_HDR %s=%s", header->key, header->value);
+    }
 }
 
 /**
@@ -352,6 +363,7 @@ static void handle_messages(struct evhttp_request *req) {
         send_error_json(req, 401, "authentication_error", "invalid gateway api key");
         return;
     }
+    log_request_headers(req);
     char *body = read_request_body(req, MAX_BODY_BYTES);
     if (!body) { log_msg("WARN", "messages body too large"); send_error_json(req, 413, "request_too_large", "request body too large"); return; }
     cJSON *anth = cJSON_Parse(body);
@@ -472,6 +484,7 @@ static void handle_chat_completions(struct evhttp_request *req) {
         send_error_json(req, 401, "authentication_error", "invalid gateway api key");
         return;
     }
+    log_request_headers(req);
     char *body = read_request_body(req, MAX_BODY_BYTES);
     if (!body) { log_msg("WARN", "chat/completions body too large"); send_error_json(req, 413, "request_too_large", "request body too large"); return; }
     cJSON *oai_req = cJSON_Parse(body);
