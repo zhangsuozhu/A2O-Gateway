@@ -416,7 +416,10 @@ cJSON *stats_get_json(void) {
 
 void stats_reset(void) {
     pthread_mutex_lock(&G_STATS.lock);
+    uint64_t active = G_STATS.active_requests;
     memset(&G_STATS, 0, sizeof(G_STATS));
+    G_STATS.active_requests = active;
+    G_STATS.peak_active_requests = active;
     G_STATS.start_time = time(NULL);
     G_STATS.min_latency_ms = -1.0;
     G_STATS.sliding_last_second = time(NULL);
@@ -487,7 +490,10 @@ double stats_get_saved_cost(const char *model, const char *provider) {
 
 void stats_reset_for_test(void) {
     pthread_mutex_lock(&G_STATS.lock);
+    uint64_t active = G_STATS.active_requests;
     memset(&G_STATS, 0, sizeof(G_STATS));
+    G_STATS.active_requests = active;
+    G_STATS.peak_active_requests = active;
     G_STATS.start_time = time(NULL);
     G_STATS.min_latency_ms = -1.0;
     G_STATS.sliding_last_second = time(NULL);

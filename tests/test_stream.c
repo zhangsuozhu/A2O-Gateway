@@ -357,7 +357,6 @@ static int test_pt_openai_stream_each_chunk_model_overridden(void) {
             if (!data_str) { failed = 1; break; }
             memcpy(data_str, data_start, data_len);
             data_str[data_len] = 0;
-
             if (strcmp(data_str, "[DONE]") != 0) {
                 data_chunks++;
                 cJSON *root = cJSON_Parse(data_str);
@@ -470,6 +469,91 @@ static int test_pt_openai_stream_empty_model_injected(void) {
     return failed;
 }
 
+static int test_pt_openai_stream_preserve_newlines(void) {
+    gateway_job_t job;
+    init_passthru_stream_job(&job, PT_OPENAI);
+
+    const char *upstream_sse =
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+        "\"model\":\"qwen3-coder-plus-2025-01\","
+        "\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n"
+        "\n"
+        "data: [DONE]\n"
+        "\n";
+    stream_parse_append(&job, upstream_sse, strlen(upstream_sse));
+
+    char *out = copy_send_buf(&job);
+    int failed = 0;
+    if (!out) {
+        failed = 1;
+    } else {
+        /* 验证每个 data: 行后都有换行符，且空行（消息分隔符）被保留 */
+        const char *p = out;
+        int newline_after_data_count = 0;
+        while ((p = strstr(p, "data: ")) != NULL) {
+            p += 6;
+            const char *nl = strchr(p, '\n');
+            if (!nl) {
+                fprintf(stderr, "expected newline after data line, got: %s\n", out);
+                failed = 1;
+                break;
+            }
+            newline_after_data_count++;
+            p = nl + 1;
+        }
+        if (newline_after_data_count != 2) {
+            fprintf(stderr, "expected 2 data lines with newlines, got %d\n", newline_after_data_count);
+            failed = 1;
+        }
+        /* 空行使得消息之间有两个连续的 \n：data...\n\ndata...\n\n */
+        if (!strstr(out, "\n\n")) {
+            fprintf(stderr, "expected SSE empty lines (\\n\\n) preserved, got: %s\n", out);
+            failed = 1;
+        }
+    }
+    free(out);
+    cleanup_stream_job(&job);
+    return failed;
+}
+
+static int test_pt_openai_stream_flush_linebuf_on_finish(void) {
+    gateway_job_t job;
+    init_passthru_stream_job(&job, PT_OPENAI);
+
+    /* 模拟上游最后一个包不带 \n：linebuf 中会残留未闭合行 */
+    const char *upstream_sse =
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+        "\"model\":\"qwen3-coder-plus-2025-01\","
+        "\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n"
+        "\n"
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+        "\"model\":\"qwen3-coder-plus-2025-01\","
+        "\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}";
+    stream_parse_append(&job, upstream_sse, strlen(upstream_sse));
+
+    /* linebuf 中应残留 finish chunk（无末尾 \n） */
+    if (job.stream_state.linebuf_len == 0) {
+        fprintf(stderr, "expected linebuf residue after incomplete last chunk\n");
+        cleanup_stream_job(&job);
+        return 1;
+    }
+
+    stream_flush_linebuf(&job);
+    char *out = copy_send_buf(&job);
+    int failed = 0;
+    if (!out) {
+        failed = 1;
+    } else {
+        if (!strstr(out, "finish_reason\":\"stop\"")) {
+            fprintf(stderr, "expected finish chunk flushed from linebuf on stream_finish, got: %s\n", out);
+            failed = 1;
+        }
+    }
+    free(out);
+    cleanup_stream_job(&job);
+    return failed;
+}
+
 int main(void) {
     int failed = 0;
     failed |= test_stream_finish_flushes_pending_reasoning_content();
@@ -482,5 +566,7 @@ int main(void) {
     failed |= test_pt_openai_stream_each_chunk_model_overridden();
     failed |= test_pt_anthropic_stream_missing_model_injected();
     failed |= test_pt_openai_stream_empty_model_injected();
+    failed |= test_pt_openai_stream_preserve_newlines();
+    failed |= test_pt_openai_stream_flush_linebuf_on_finish();
     return failed ? 1 : 0;
 }

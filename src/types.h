@@ -264,6 +264,17 @@ typedef struct worker {
  * 包含请求/响应数据、流式状态、libcurl 句柄、发送缓冲区等完整上下文。
  * 该结构体生命周期从收到客户端请求开始，到响应完全发送后结束。
  */
+/**
+ * @brief 自定义 HTTP 请求头键值对
+ *
+ * 用于在模型配置中定义需要额外发送或覆盖的上游请求头。
+ * key 为头名称，value 为头值；value 为空字符串表示删除该头。
+ */
+typedef struct {
+    char *key;   /**< 请求头名称 */
+    char *value; /**< 请求头值（空字符串表示删除） */
+} http_header_t;
+
 struct gateway_job {
     /* 客户端请求相关 */
     struct evhttp_request *client_req;  /**< libevent HTTP 请求对象（来自客户端） */
@@ -274,6 +285,7 @@ struct gateway_job {
     char *api_key;          /**< 用于上游认证的实际 API 密钥 */
     char *provider_name;    /**< 上游提供商名称（如 "anthropic"、"openai"），用于路由 */
     char *client_user_agent; /**< 客户端 User-Agent，透传到上游 */
+    bool spoof_claude_code_headers; /**< 是否模拟 Claude Code 请求头发送给上游 */
 
     /* 模型映射 */
     char *client_model;     /**< 客户端请求的模型 ID（如 "claude-3-sonnet"） */
@@ -299,6 +311,8 @@ struct gateway_job {
     /* libcurl 句柄与请求头 */
     CURL *easy;                  /**< 本请求对应的 CURL easy handle */
     struct curl_slist *headers;  /**< 发送给上游的 HTTP 请求头链表 */
+    http_header_t *extra_headers; /**< 模型配置中自定义的额外请求头 */
+    size_t extra_headers_count;   /**< 自定义请求头数量 */
 
     /* 所属工作线程与链表指针 */
     worker_t *worker;        /**< 处理本任务的工作线程指针 */

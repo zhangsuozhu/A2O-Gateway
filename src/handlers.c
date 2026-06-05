@@ -352,6 +352,34 @@ static void handle_health(struct evhttp_request *req) {
  *
  * 此后 worker 线程负责上游网络 I/O，主线程继续处理其他 HTTP 请求。
  */
+
+/**
+ * @brief 从模型配置中解析自定义请求头并填充到 job
+ * @param job  网关任务对象
+ * @param model 模型配置的 cJSON 对象
+ *
+ * 读取模型配置中的 "headers" 对象字段，将其键值对提取为 http_header_t 数组。
+ * 仅处理值为字符串类型的条目。
+ */
+static void job_parse_extra_headers(gateway_job_t *job, cJSON *model) {
+    cJSON *headers = cJSON_GetObjectItemCaseSensitive(model, "headers");
+    if (!cJSON_IsObject(headers)) return;
+    int count = cJSON_GetArraySize(headers);
+    if (count <= 0) return;
+    job->extra_headers = (http_header_t *)calloc((size_t)count, sizeof(http_header_t));
+    if (!job->extra_headers) return;
+    cJSON *item = NULL;
+    int i = 0;
+    cJSON_ArrayForEach(item, headers) {
+        if (cJSON_IsString(item) && item->string) {
+            job->extra_headers[i].key = xstrdup(item->string);
+            job->extra_headers[i].value = xstrdup(item->valuestring);
+            i++;
+        }
+    }
+    job->extra_headers_count = (size_t)i;
+}
+
 static void handle_messages(struct evhttp_request *req) {
     if (evhttp_request_get_command(req) != EVHTTP_REQ_POST) {
         log_msg("WARN", "messages non-POST method");
@@ -424,6 +452,8 @@ static void handle_messages(struct evhttp_request *req) {
     job->passthrough = passthrough;
     /* 透传模式上游是 Anthropic 协议，input_tokens 不含 cache_read */
     job->prompt_tokens_includes_cache = config_get_prompt_tokens_includes_cache(model, passthrough != PT_ANTHROPIC);
+    job_parse_extra_headers(job, model);
+    job->spoof_claude_code_headers = json_get_bool(model, "spoof_claude_code_headers", false);
     job->stream_state.client_model = xstrdup(job->client_model);
     /* 不估算 prompt tokens，只认上游返回的真实 usage 值 */
     job->stream_state.prompt_tokens = 0;
@@ -532,6 +562,8 @@ static void handle_chat_completions(struct evhttp_request *req) {
     job->passthrough = PT_OPENAI;
     /* OpenAI 协议惯例：prompt_tokens 已包含缓存 tokens，可被模型配置覆盖 */
     job->prompt_tokens_includes_cache = config_get_prompt_tokens_includes_cache(model, true);
+    job_parse_extra_headers(job, model);
+    job->spoof_claude_code_headers = json_get_bool(model, "spoof_claude_code_headers", false);
     job->stream_state.client_model = xstrdup(job->client_model);
     job->stream_state.prompt_tokens = 0;
     clock_gettime(CLOCK_MONOTONIC, &job->start_time);

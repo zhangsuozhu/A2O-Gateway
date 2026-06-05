@@ -32,10 +32,6 @@
     button.red:hover{background:#dc2626}
     button.sm{font-size:11px;padding:3px 8px}
     .hdr{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-    .mc{border:1px solid #1e2d4a;border-radius:9px;padding:14px;margin-bottom:10px;background:#0e1729}
-    .mc.act{border-color:#22c55e;box-shadow:0 0 0 1px rgba(34,197,94,.2)}
-    .mc-new{border-color:#3b82f6;animation:glow 1.5s ease-out}
-    @keyframes glow{0%{border-color:#3b82f6;box-shadow:0 0 12px rgba(59,130,246,.4)}100%{border-color:#1e2d4a;box-shadow:0 0 0 0 transparent}}
     .mh{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}
     .badge{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;font-size:10px;font-weight:600;background:#1a2744;color:#8899b4}
     .badge.def{background:rgba(34,197,94,.15);color:#22c55e}
@@ -56,7 +52,32 @@
     .empty p{margin-bottom:10px}
     .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;justify-content:center;align-items:center}
     .modal-overlay.show{display:flex}
-    .modal{background:#131c31;border:1px solid #1e2d4a;border-radius:12px;padding:22px;width:90%;max-width:480px;max-height:90vh;overflow-y:auto}
+    .modal{background:#131c31;border:1px solid #1e2d4a;border-radius:12px;padding:28px;width:90%;max-width:480px;max-height:90vh;overflow-y:auto}
+    .modal-wide{max-width:920px}
+    .modal-wide .sect{margin:20px 0 12px;font-size:12px;color:#64748b;font-weight:600;padding-top:14px;border-top:1px solid #1e2d4a;letter-spacing:.3px}
+    .modal-wide .sect:first-of-type{margin-top:0;padding-top:0;border-top:none}
+    .modal-wide .fg2{gap:12px;align-items:start}
+    .modal-wide .fg4{gap:12px;align-items:start}
+    .modal-wide .hint{font-size:10px;color:#64748b;margin-top:3px;line-height:1.35}
+    .modal-wide input,.modal-wide select,.modal-wide textarea{padding:8px 10px}
+    .modal-wide label{margin-bottom:4px}
+    .model-table{width:100%;border-collapse:collapse;font-size:12px}
+    .model-table th,.model-table td{padding:8px 10px;text-align:left;border-bottom:1px solid #1e2d4a}
+    .model-table th{color:#8899b4;font-weight:600;font-size:11px;background:#0e1729}
+    .model-table tr:hover{background:rgba(255,255,255,.03)}
+    .model-table td{color:#c8d2e6}
+    .model-table .num{text-align:right;font-variant-numeric:tabular-nums}
+    .model-table .off td{color:#64748b}
+    .model-table .def-badge{background:rgba(34,197,94,.15);color:#22c55e;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:600;margin-right:4px}
+    .model-table .off-badge{background:rgba(239,68,68,.12);color:#ef4444;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:600}
+    .model-table .pill{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;font-size:10px;font-weight:600;background:#1a2744;color:#8899b4}
+    .model-table .pill.on{background:rgba(34,197,94,.12);color:#22c55e}
+    .model-table .pill.off{background:rgba(239,68,68,.12);color:#ef4444}
+    .model-table .actions{display:flex;gap:4px;flex-wrap:wrap}
+    .model-table .id-col{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .model-table .up-col{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    @media(max-width:900px){.model-table .hide-sm{display:none}.model-table .id-col,.model-table .up-col{max-width:100px}}
+    @media(max-width:700px){.model-table .hide-xs{display:none}}
     .modal h2{font-size:16px;font-weight:600;margin-bottom:3px}
     .modal .sub{color:#8899b4;font-size:12px;margin-bottom:16px}
     .modal .f{margin-bottom:12px}
@@ -394,6 +415,49 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="editModal">
+  <div class="modal modal-wide">
+    <h2>编辑模型</h2>
+    <div class="sub" id="editModalSub"></div>
+    <div class="sect">基本信息</div>
+    <div class="fg4">
+      <div><label>模型 ID</label><input id="edit_id" /></div>
+      <div><label>厂商</label><input id="edit_provider" placeholder="aliyun, deepseek" /></div>
+      <div><label>优先级 <span style="color:#64748b;font-weight:400">0-1000</span></label><input id="edit_priority" type="number" min="0" max="1000" /></div>
+      <div><label>状态</label><select id="edit_enabled"><option value="true">启用</option><option value="false">禁用</option></select></div>
+    </div>
+    <div class="sect">接口连接</div>
+    <div class="fg2">
+      <div><label>Base URL</label><input id="edit_base_url" placeholder="https://api.example.com/v1" /></div>
+      <div><label>Endpoint <span style="color:#64748b;font-weight:400">可选</span></label><input id="edit_endpoint" placeholder="留空则自动拼接 /chat/completions" /></div>
+      <div><label>上游模型名</label><input id="edit_upstream_model" placeholder="qwen3-coder-plus" /></div>
+      <div><label>API 模式</label><select id="edit_api_mode"><option value="">OpenAI 兼容</option><option value="passthrough">Anthropic 透传</option></select></div>
+      <div style="grid-column:1/-1"><label>API Key</label><input id="edit_api_key" type="text" style="font-family:monospace" /></div>
+    </div>
+    <div style="font-size:11px;color:#8b9dc3;margin-top:4px" id="edit_url_hint"></div>
+    <div class="sect">模型参数</div>
+    <div class="fg4">
+      <div><label>Temperature</label><input id="edit_temperature" type="number" step="0.01" min="0" max="2" placeholder="0.2" /></div>
+      <div><label>Top P</label><input id="edit_top_p" type="number" step="0.01" min="0" max="1" placeholder="0.95" /></div>
+      <div><label>Max Tokens</label><input id="edit_max_tokens" type="number" step="1" min="1" placeholder="4096" /></div>
+      <div><label>Stop <span style="color:#64748b;font-weight:400">逗号分隔</span></label><input id="edit_stop" placeholder="Human:, Assistant:" /></div>
+    </div>
+    <div class="sect">高级设置</div>
+    <div class="fg2">
+      <div><label>缓存策略</label><select id="edit_cache_policy"><option value="off">off</option><option value="auto">auto</option></select><div class="hint">auto 时在 system 消息中注入 cache_control</div></div>
+      <div><label>缓存阈值 (tokens)</label><input id="edit_min_cache_tokens" type="number" step="1" min="0" placeholder="1024" /><div class="hint">system prompt 超过此 token 数时才注入 cache_control</div></div>
+      <div><label>剥离 reasoning_content</label><select id="edit_strip_reasoning_content"><option value="false">关闭</option><option value="true">开启</option></select><div class="hint">开启后移除 assistant message 中的 reasoning_content</div></div>
+      <div><label>prompt_tokens 含缓存</label><select id="edit_prompt_tokens_includes_cache"><option value="true">是</option><option value="false">否 (Moonshot)</option></select><div class="hint">是 = 上游 prompt_tokens 已含缓存（DeepSeek/OpenAI/Anthropic）</div></div>
+      <div style="grid-column:1/-1"><label>模拟 Claude Code 请求头</label><select id="edit_spoof_claude_code_headers"><option value="false">关闭</option><option value="true">开启</option></select><div class="hint">开启后将自动添加 Claude Code 特有的 HTTP 请求头，用于绕过对客户端有限制的上游</div></div>
+    </div>
+    <div class="sect">扩展配置</div>
+    <div><label>extra_body <span style="color:#64748b;font-weight:400">JSON</span></label><textarea id="edit_extra_body" rows="2" placeholder='{"enable_search":true}'></textarea></div>
+    <div class="ma">
+      <button class="ghost" onclick="hideEditModal()">取消</button>
+      <button class="green" onclick="confirmEdit()">保存</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -405,7 +469,7 @@ let statsTimer = null;
 let rtTimer = null;
 let currentTab = 'config';
 let hiddenPaused = false;
-
+let editingIdx = -1;
 // 历史查询分页状态
 let histLimit = 100;
 let histOffset = 0;
@@ -540,6 +604,14 @@ function render() {
   renderModels();
 }
 
+function sortModels() {
+  cfg.models.sort(function(a, b) {
+    if (a.id < b.id) return -1;
+    if (a.id > b.id) return 1;
+    return (a.priority || 100) - (b.priority || 100);
+  });
+}
+
 function renderModels() {
   var box = $('models');
   var hint = $('emptyHint');
@@ -551,9 +623,51 @@ function renderModels() {
   }
   hint.style.display = 'none';
   $('modelCount').textContent = '— ' + cfg.models.length + ' 个模型';
+  sortModels();
+  var table = document.createElement('table');
+  table.className = 'model-table';
+  var thead = '<thead><tr>' +
+    '<th>#</th>' +
+    '<th>厂家</th>' +
+    '<th>模型 ID</th>' +
+    '<th class="num">优先级</th>' +
+    '<th>上游模型名</th>' +
+    '<th>API 模式</th>' +
+    '<th>启用</th>' +
+    '<th class="hide-sm">模拟 Claude 头</th>' +
+    '<th>操作</th>' +
+    '</tr></thead>';
+  var tbody = document.createElement('tbody');
   for (var i = 0; i < cfg.models.length; i++) {
-    box.appendChild(createModel(cfg.models[i], i));
+    var m = cfg.models[i];
+    var active = (m.id === cfg.active_model);
+    var en = (m.enabled !== false);
+    var tr = document.createElement('tr');
+    tr.className = (active ? 'act ' : '') + (en ? '' : 'off');
+    tr.setAttribute('data-idx', i);
+    var apiModeText = (m.api_mode === 'passthrough') ? 'Anthropic 透传' : 'OpenAI 兼容';
+    var spoof = (m.spoof_claude_code_headers === true);
+    var actions = '';
+    if (!active) actions += '<button class="green sm" onclick="setActive(' + i + ')">★ 默认</button>';
+    else actions += '<button class="ghost sm" onclick="clearActive()">✕ 取消</button>';
+    actions += '<button class="ghost sm" onclick="openEditModal(' + i + ')">详情</button>';
+    actions += '<button class="ghost sm" onclick="dup(' + i + ')">📋 复制</button>';
+    actions += '<button class="red sm" onclick="del(' + i + ')">🗑</button>';
+    tr.innerHTML =
+      '<td>' + (i+1) + '</td>' +
+      '<td>' + esc(m.provider || '') + '</td>' +
+      '<td class="id-col" title="' + escAttr(m.id) + '">' + (active ? '<span class="def-badge">★</span>' : '') + esc(m.id) + '</td>' +
+      '<td class="num">' + (m.priority != null ? m.priority : 100) + '</td>' +
+      '<td class="up-col" title="' + escAttr(m.upstream_model || '') + '">' + esc(m.upstream_model || '') + '</td>' +
+      '<td>' + apiModeText + '</td>' +
+      '<td><span class="pill ' + (en ? 'on' : 'off') + '">' + (en ? '是' : '否') + '</span></td>' +
+      '<td class="hide-sm"><span class="pill ' + (spoof ? 'on' : 'off') + '">' + (spoof ? '是' : '否') + '</span></td>' +
+      '<td class="actions">' + actions + '</td>';
+    tbody.appendChild(tr);
   }
+  table.innerHTML = thead;
+  table.appendChild(tbody);
+  box.appendChild(table);
 }
 
 function escAttr(v) {
@@ -568,138 +682,87 @@ function fmtUpstreamUrl(base_url, endpoint, api_mode) {
   return raw + suffix;
 }
 
-function updateUrlHint(i) {
-  var hintEl = document.getElementById('url-hint-' + i);
-  if (!hintEl) return;
-  var baseEl = document.querySelector('.fi[data-idx="' + i + '"][data-k="base_url"]');
-  var epEl = document.querySelector('.fi[data-idx="' + i + '"][data-k="endpoint"]');
-  var modeEl = document.querySelector('.fi[data-idx="' + i + '"][data-k="api_mode"]');
-  var url = fmtUpstreamUrl(baseEl ? baseEl.value : '', epEl ? epEl.value : '', modeEl ? modeEl.value : '');
-  hintEl.textContent = '→ ' + url;
-}
-
-function createModel(m, i) {
-  var active = (m.id === cfg.active_model);
-  var en = (m.enabled !== false);
-  var div = document.createElement('div');
-  div.className = 'mc' + (active ? ' act' : '');
-  div.setAttribute('data-idx', i);
-
-  // 构建内部 HTML
-  var html = '';
-  // 头部
-  html += '<div class="mh">';
-  html += '  <div class="hdr">';
-  html += '    <span class="badge">#' + (i+1) + '</span>';
-  if (active) html += '    <span class="badge def">★ 当前默认</span>';
-  html += '    <span class="badge ' + (en ? '' : 'off') + '">' + (en ? '启用' : '禁用') + '</span>';
-  html += '  </div>';
-  html += '  <div class="hdr">';
-  if (!active) html += '    <button class="green sm" onclick="setActive(' + i + ')">★ 设为默认</button>';
-  if (active)  html += '    <button class="ghost sm" onclick="clearActive()">✕ 取消默认</button>';
-  html += '    <button class="ghost sm" onclick="dup(' + i + ')">📋 复制</button>';
-  html += '    <button class="red sm" onclick="del(' + i + ')">🗑</button>';
-  html += '  </div>';
-  html += '</div>';
-
-  // 基本信息
-  html += '<div class="sect">基本信息</div>';
-  html += '<div class="fg4">';
-  html += '  <div><label>模型 ID</label><input class="fi" data-idx="' + i + '" data-k="id" value="' + escAttr(m.id) + '" /></div>';
-  html += '  <div><label>厂商</label><input class="fi" data-idx="' + i + '" data-k="provider" value="' + escAttr(m.provider || '') + '" placeholder="aliyun, deepseek" /></div>';
-  html += '  <div><label>优先级 <span style="color:#64748b;font-weight:400">0-1000</span></label><input class="fi" data-idx="' + i + '" data-k="priority" value="' + escAttr(m.priority != null ? m.priority : '100') + '" type="number" min="0" max="1000" /></div>';
-  html += '  <div><label>状态</label><select class="fi" data-idx="' + i + '" data-k="enabled"><option value="true"' + (en?' selected':'') + '>启用</option><option value="false"' + (!en?' selected':'') + '>禁用</option></select></div>';
-  html += '</div>';
-
-  // 接口连接
-  html += '<div class="sect">接口连接</div>';
-  html += '<div class="fg2">';
-  html += '  <div><label>Base URL</label><input class="fi" data-idx="' + i + '" data-k="base_url" value="' + escAttr(m.base_url || '') + '" placeholder="https://api.example.com/v1" /></div>';
-  html += '  <div><label>Endpoint <span style="color:#64748b;font-weight:400">可选</span></label><input class="fi" data-idx="' + i + '" data-k="endpoint" value="' + escAttr(m.endpoint || '') + '" placeholder="留空则自动拼接 /chat/completions" /></div>';
-  html += '  <div><label>上游模型名</label><input class="fi" data-idx="' + i + '" data-k="upstream_model" value="' + escAttr(m.upstream_model || '') + '" placeholder="qwen3-coder-plus" /></div>';
-  html += '  <div><label>API 模式</label><select class="fi" data-idx="' + i + '" data-k="api_mode"><option value=""' + (m.api_mode ? '' : ' selected') + '>OpenAI 兼容</option><option value="passthrough"' + (m.api_mode === 'passthrough' ? ' selected' : '') + '>Anthropic 透传</option></select></div>';
-  html += '  <div style="grid-column:1/-1"><label>API Key</label><input class="fi" data-idx="' + i + '" data-k="api_key" value="' + escAttr(m.api_key || '') + '" type="text" style="font-family:monospace" /></div>';
-  html += '</div>';
-  html += '<div style="font-size:11px;color:#8b9dc3;margin-top:4px" id="url-hint-' + i + '">→ ' + escAttr(fmtUpstreamUrl(m.base_url || '', m.endpoint || '', m.api_mode || '')) + '</div>';
-
-  // 模型参数
-  html += '<div class="sect">模型参数</div>';
-  html += '<div class="fg4">';
-  html += '  <div><label>Temperature</label><input class="fp" data-idx="' + i + '" data-k="temperature" type="number" step="0.01" min="0" max="2" value="' + (m.params && m.params.temperature != null ? m.params.temperature : '') + '" placeholder="0.2" /></div>';
-  html += '  <div><label>Top P</label><input class="fp" data-idx="' + i + '" data-k="top_p" type="number" step="0.01" min="0" max="1" value="' + (m.params && m.params.top_p != null ? m.params.top_p : '') + '" placeholder="0.95" /></div>';
-  html += '  <div><label>Max Tokens</label><input class="fp" data-idx="' + i + '" data-k="max_tokens" type="number" step="1" min="1" value="' + (m.params && m.params.max_tokens != null ? m.params.max_tokens : '') + '" placeholder="4096" /></div>';
+function openEditModal(i) {
+  editingIdx = i;
+  var m = cfg.models[i];
+  $('editModalSub').textContent = '编辑 #' + (i+1) + ' — ' + m.id;
+  $('edit_id').value = m.id || '';
+  $('edit_provider').value = m.provider || '';
+  $('edit_priority').value = m.priority != null ? m.priority : '100';
+  $('edit_enabled').value = (m.enabled !== false) ? 'true' : 'false';
+  $('edit_base_url').value = m.base_url || '';
+  $('edit_endpoint').value = m.endpoint || '';
+  $('edit_upstream_model').value = m.upstream_model || '';
+  $('edit_api_mode').value = m.api_mode || '';
+  $('edit_api_key').value = m.api_key || '';
+  $('edit_temperature').value = (m.params && m.params.temperature != null) ? m.params.temperature : '';
+  $('edit_top_p').value = (m.params && m.params.top_p != null) ? m.params.top_p : '';
+  $('edit_max_tokens').value = (m.params && m.params.max_tokens != null) ? m.params.max_tokens : '';
   var stopVal = '';
   if (m.params && m.params.stop) {
     stopVal = Array.isArray(m.params.stop) ? m.params.stop.join(',') : String(m.params.stop);
   }
-  html += '  <div><label>Stop <span style="color:#64748b;font-weight:400">逗号分隔</span></label><input class="fp" data-idx="' + i + '" data-k="stop" value="' + escAttr(stopVal) + '" placeholder="Human:, Assistant:" /></div>';
-  html += '</div>';
+  $('edit_stop').value = stopVal;
+  $('edit_cache_policy').value = (m.cache_policy === 'auto') ? 'auto' : 'off';
+  $('edit_min_cache_tokens').value = m.min_cache_tokens != null ? m.min_cache_tokens : '1024';
+  $('edit_strip_reasoning_content').value = (m.strip_reasoning_content === true) ? 'true' : 'false';
+  $('edit_prompt_tokens_includes_cache').value = (m.prompt_tokens_includes_cache !== false) ? 'true' : 'false';
+  $('edit_spoof_claude_code_headers').value = (m.spoof_claude_code_headers === true) ? 'true' : 'false';
+  $('edit_extra_body').value = JSON.stringify(m.extra_body || {}, null, 2);
+  updateEditUrlHint();
+  $('edit_base_url').oninput = updateEditUrlHint;
+  $('edit_endpoint').oninput = updateEditUrlHint;
+  $('edit_api_mode').onchange = updateEditUrlHint;
+  $('editModal').classList.add('show');
+}
 
-  // 高级设置
-  html += '<div class="sect">高级设置</div>';
-  html += '<div class="fg2">';
-  html += '  <div><label>缓存策略</label><div class="hint">auto 时在 system 消息中注入 cache_control，上游按缓存 creation + read 计费</div><select class="fi" data-idx="' + i + '" data-k="cache_policy"><option value="off"' + (m.cache_policy !== 'auto' ? ' selected' : '') + '>off</option><option value="auto"' + (m.cache_policy === 'auto' ? ' selected' : '') + '>auto</option></select></div>';
-  html += '  <div><label>缓存阈值 (tokens)</label><div class="hint">system prompt 超过此 token 数时才注入 cache_control，避免短提示浪费缓存写入成本</div><input class="fi" data-idx="' + i + '" data-k="min_cache_tokens" type="number" step="1" min="0" value="' + (m.min_cache_tokens || '1024') + '" placeholder="1024" /></div>';
-  html += '  <div><label>剥离 reasoning_content</label><div class="hint">开启后移除 assistant message 中的 reasoning_content，避免被上游计费为 prompt input</div><select class="fi" data-idx="' + i + '" data-k="strip_reasoning_content"><option value="false"' + (m.strip_reasoning_content !== true ? ' selected' : '') + '>关闭</option><option value="true"' + (m.strip_reasoning_content === true ? ' selected' : '') + '>开启</option></select></div>';
-  html += '  <div><label>prompt_tokens 含缓存</label><div class="hint">是 = 上游 prompt_tokens 已含缓存（DeepSeek/OpenAI/Anthropic）。否 = 需网关合并（Moonshot）</div><select class="fi" data-idx="' + i + '" data-k="prompt_tokens_includes_cache"><option value="true"' + (m.prompt_tokens_includes_cache !== false ? ' selected' : '') + '>是</option><option value="false"' + (m.prompt_tokens_includes_cache === false ? ' selected' : '') + '>否 (Moonshot)</option></select></div>';
-  html += '</div>';
+function hideEditModal() {
+  $('editModal').classList.remove('show');
+  editingIdx = -1;
+}
 
-  // 扩展配置
-  html += '<div class="sect">扩展配置</div>';
-  html += '<div><label>extra_body <span style="color:#64748b;font-weight:400">JSON</span></label>';
-  html += '<textarea class="fi" data-idx="' + i + '" data-k="extra_body" rows="2" placeholder=\'{"enable_search":true}\'>' + esc(JSON.stringify(m.extra_body || {}, null, 2)) + '</textarea></div>';
+function confirmEdit() {
+  if (editingIdx < 0 || editingIdx >= cfg.models.length) { hideEditModal(); return; }
+  var m = {};
+  m.id = $('edit_id').value.trim();
+  m.provider = $('edit_provider').value.trim();
+  m.priority = Number($('edit_priority').value) || 100;
+  m.enabled = $('edit_enabled').value === 'true';
+  m.base_url = $('edit_base_url').value.trim();
+  m.endpoint = $('edit_endpoint').value.trim();
+  m.upstream_model = $('edit_upstream_model').value.trim();
+  m.api_mode = $('edit_api_mode').value;
+  m.api_key = $('edit_api_key').value.trim();
+  var p = {};
+  var t = $('edit_temperature').value.trim();
+  if (t) p.temperature = Number(t);
+  var tp = $('edit_top_p').value.trim();
+  if (tp) p.top_p = Number(tp);
+  var mt = $('edit_max_tokens').value.trim();
+  if (mt) p.max_tokens = Number(mt);
+  var st = $('edit_stop').value.trim();
+  if (st) p.stop = st.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+  if (Object.keys(p).length) m.params = p;
+  m.cache_policy = $('edit_cache_policy').value;
+  m.min_cache_tokens = Number($('edit_min_cache_tokens').value) || 1024;
+  m.strip_reasoning_content = $('edit_strip_reasoning_content').value === 'true';
+  m.prompt_tokens_includes_cache = $('edit_prompt_tokens_includes_cache').value === 'true';
+  m.spoof_claude_code_headers = $('edit_spoof_claude_code_headers').value === 'true';
+  var eb = $('edit_extra_body').value.trim();
+  try { m.extra_body = eb ? JSON.parse(eb) : {}; } catch(e) { m.extra_body = {}; }
+  cfg.models[editingIdx] = m;
+  hideEditModal();
+  renderModels();
+  markDirty();
+  toast('已更新: ' + m.id);
+}
 
-  div.innerHTML = html;
-
-  // 绑定变更事件
-  var inputs = div.querySelectorAll('.fi, .fp');
-  for (var j = 0; j < inputs.length; j++) {
-    inputs[j].addEventListener('change', function() { collect(); markDirty(); });
-    inputs[j].addEventListener('input', function() { markDirty(); });
-  }
-
-  // URL 预览实时更新
-  (function(idx) {
-    var urlFields = div.querySelectorAll('.fi[data-k="base_url"], .fi[data-k="endpoint"], .fi[data-k="api_mode"]');
-    for (var k = 0; k < urlFields.length; k++) {
-      urlFields[k].addEventListener('input', function() { updateUrlHint(idx); });
-      urlFields[k].addEventListener('change', function() { updateUrlHint(idx); });
-    }
-  })(i);
-
-  return div;
+function updateEditUrlHint() {
+  var url = fmtUpstreamUrl($('edit_base_url').value, $('edit_endpoint').value, $('edit_api_mode').value);
+  $('edit_url_hint').textContent = '→ ' + url;
 }
 
 // ── 数据收集 ──
-function collectOne(i) {
-  var m = {};
-  var fields = document.querySelectorAll('.fi[data-idx="' + i + '"]');
-  for (var j = 0; j < fields.length; j++) {
-    var el = fields[j];
-    var k = el.getAttribute('data-k');
-    if (k === 'enabled') m[k] = el.value === 'true';
-    else if (k === 'prompt_tokens_includes_cache') m[k] = el.value === 'true';
-    else if (k === 'strip_reasoning_content') m[k] = el.value === 'true';
-    else if (k === 'priority') m[k] = Number(el.value);
-    else if (k === 'min_cache_tokens') m[k] = Number(el.value) || 1024;
-    else if (k === 'extra_body') { try { m[k] = el.value.trim() ? JSON.parse(el.value) : {}; } catch(e) {} }
-    else m[k] = el.value;
-  }
-  var p = {};
-  var params = document.querySelectorAll('.fp[data-idx="' + i + '"]');
-  for (var j = 0; j < params.length; j++) {
-    var el = params[j];
-    var k = el.getAttribute('data-k');
-    var v = el.value.trim();
-    if (!v) continue;
-    if (k === 'stop') p[k] = v.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-    else if (['temperature','top_p','max_tokens','frequency_penalty','presence_penalty'].indexOf(k) >= 0) p[k] = Number(v);
-    else p[k] = v;
-  }
-  if (Object.keys(p).length) m.params = p;
-  return m;
-}
-
 function collect() {
   if (!cfg) return;
   cfg.listen_port = Number($('port').value) || 8080;
@@ -708,14 +771,9 @@ function collect() {
   cfg.log_file = $('logFile').value;
   cfg.realtime_print = $('realtimePrint').value;
   cfg.log_level = $('logLevel').value;
-  var arr = [];
-  var cards = document.querySelectorAll('.mc');
-  for (var i = 0; i < cards.length; i++) {
-    arr.push(collectOne(i));
-  }
-  if (arr.length) cfg.models = arr;
   return cfg;
 }
+
 
 function markDirty() {
   if (!dirty) { dirty = true; $('headerStatus').textContent = '⚠️ 有未保存修改'; }
@@ -753,7 +811,7 @@ function clearActive() {
 function add() { showAddModal(); }
 
 function dup(i) {
-  var cp = JSON.parse(JSON.stringify(collectOne(i)));
+  var cp = JSON.parse(JSON.stringify(cfg.models[i]));
   cp.id = cp.id + '-copy';
   cfg.models.splice(i+1, 0, cp);
   renderModels();
@@ -856,19 +914,14 @@ function confirmAdd() {
     upstream_model: upstream_model,
     enabled: true,
     params: {temperature: 0.2, top_p: 0.95},
-    extra_body: {}
+    extra_body: {},
+    spoof_claude_code_headers: false
   };
   if (api_mode) newModel.api_mode = api_mode;
   cfg.models.push(newModel);
   if (!cfg.active_model) cfg.active_model = id;
   hideAddModal();
   renderModels();
-  var cards = document.querySelectorAll('.mc');
-  if (cards.length) {
-    cards[cards.length-1].classList.add('mc-new');
-    cards[cards.length-1].scrollIntoView({behavior:'smooth', block:'nearest'});
-    setTimeout(function() { cards[cards.length-1].classList.remove('mc-new'); }, 2000);
-  }
   markDirty();
   toast('✅ 已添加: ' + id);
 }
@@ -901,13 +954,16 @@ function copyEnv() {
 
 // ── 键盘 ──
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') hideAddModal();
+  if (e.key === 'Escape') { hideAddModal(); hideEditModal(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (cfg) save(); }
 });
 
 // 点击遮罩关闭弹窗
 $('addModal').addEventListener('click', function(e) {
   if (e.target === e.currentTarget) hideAddModal();
+});
+$('editModal').addEventListener('click', function(e) {
+  if (e.target === e.currentTarget) hideEditModal();
 });
 $('pwdModal').addEventListener('click', function(e) {
   if (e.target === e.currentTarget) hidePwdModal();

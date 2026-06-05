@@ -133,6 +133,9 @@ void stream_emit_error(gateway_job_t *job, const char *message);
  */
 void stream_finish(gateway_job_t *job);
 
+/* 在流结束前刷新 linebuf 中残留的未闭合 SSE 行 */
+void stream_flush_linebuf(gateway_job_t *job);
+
 /* 释放流状态占用的内存
  * 
  * 释放以下资源：

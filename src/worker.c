@@ -381,6 +381,10 @@ static void complete_stream_job(gateway_job_t *job, CURLcode rc) {
         if (rc == CURLE_OK && job->upstream_status < 400) {
             log_msg("INFO", "STRM_OK model=%s upstream_status=%ld", job->client_model, job->upstream_status);
         }
+        /* 透传模式：发送 linebuf 中可能残留的未闭合 SSE 行 */
+        if (job->passthrough != PT_NONE) {
+            stream_flush_linebuf(job);
+        }
         stream_finish(job);
     }
 
@@ -450,33 +454,78 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
     curl_easy_setopt(job->easy, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(job->easy, CURLOPT_SSL_VERIFYHOST, 2L);
 
-    job->headers = NULL;
-    job->headers = curl_slist_append(job->headers, "Content-Type: application/json");
-    /* 透传客户端 User-Agent；为空时模拟常见 OpenAI 客户端 */
-    if (job->client_user_agent && *job->client_user_agent) {
-        char ua_hdr[4096];
-        snprintf(ua_hdr, sizeof(ua_hdr), "User-Agent: %s", job->client_user_agent);
-        job->headers = curl_slist_append(job->headers, ua_hdr);
-    } else {
-        job->headers = curl_slist_append(job->headers, "User-Agent: OpenAI-Client/1.0");
+    /* 使用临时数组收集所有请求头，支持自定义头的覆盖/删除 */
+    #define MAX_TMP_HDR 32
+    typedef struct { char key[128]; char value[4096]; } tmp_hdr_t;
+    tmp_hdr_t tmp[MAX_TMP_HDR];
+    int tmp_count = 0;
+
+    auto void tmp_hdr_set(const char *key, const char *value) {
+        for (int i = 0; i < tmp_count; i++) {
+            if (strcasecmp(tmp[i].key, key) == 0) {
+                if (value && *value) {
+                    snprintf(tmp[i].value, sizeof(tmp[i].value), "%s", value);
+                } else {
+                    tmp[i] = tmp[tmp_count - 1];
+                    tmp_count--;
+                }
+                return;
+            }
+        }
+        if (value && *value && tmp_count < MAX_TMP_HDR) {
+            snprintf(tmp[tmp_count].key, sizeof(tmp[tmp_count].key), "%s", key);
+            snprintf(tmp[tmp_count].value, sizeof(tmp[tmp_count].value), "%s", value);
+            tmp_count++;
+        }
     }
+
+    tmp_hdr_set("Content-Type", "application/json");
     if (job->passthrough == PT_ANTHROPIC) {
-        /* Anthropic API 使用 x-api-key 和 anthropic-version 头 */
         if (job->api_key && *job->api_key) {
-            char xkey[4096];
-            snprintf(xkey, sizeof(xkey), "x-api-key: %s", job->api_key);
-            job->headers = curl_slist_append(job->headers, xkey);
+            tmp_hdr_set("x-api-key", job->api_key);
         }
-        job->headers = curl_slist_append(job->headers, "anthropic-version: 2023-06-01");
-        job->headers = curl_slist_append(job->headers, "Accept: application/json, text/event-stream");
+        tmp_hdr_set("anthropic-version", "2023-06-01");
+        tmp_hdr_set("Accept", "application/json, text/event-stream");
     } else {
-        /* PT_NONE 与 PT_OPENAI 均使用 OpenAI 兼容鉴权头 */
-        job->headers = curl_slist_append(job->headers, "Accept: application/json, text/event-stream");
+        tmp_hdr_set("Accept", "application/json, text/event-stream");
         if (job->api_key && *job->api_key) {
-            char auth[4096];
-            snprintf(auth, sizeof(auth), "Authorization: Bearer %s", job->api_key);
-            job->headers = curl_slist_append(job->headers, auth);
+            char auth_val[4096];
+            snprintf(auth_val, sizeof(auth_val), "Bearer %s", job->api_key);
+            tmp_hdr_set("Authorization", auth_val);
         }
+    }
+    const char *ua = (job->client_user_agent && *job->client_user_agent)
+                     ? job->client_user_agent : "OpenAI-Client/1.0";
+    tmp_hdr_set("User-Agent", ua);
+    /* 模拟 Claude Code 请求头 */
+    if (job->spoof_claude_code_headers) {
+        tmp_hdr_set("User-Agent", "claude-cli/2.1.153 (external, cli)");
+        tmp_hdr_set("X-Stainless-Arch", "x64");
+        tmp_hdr_set("X-Stainless-Lang", "js");
+        tmp_hdr_set("X-Stainless-OS", "Linux");
+        tmp_hdr_set("X-Stainless-Package-Version", "0.94.0");
+        tmp_hdr_set("X-Stainless-Runtime", "node");
+        tmp_hdr_set("X-Stainless-Runtime-Version", "v24.3.0");
+        tmp_hdr_set("X-Stainless-Timeout", "600");
+        tmp_hdr_set("anthropic-beta", "claude-code-20250219,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,thinking-token-count-2026-05-13,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01,effort-2025-11-24");
+        tmp_hdr_set("anthropic-dangerous-direct-browser-access", "true");
+        tmp_hdr_set("x-app", "cli");
+    }
+
+    /* 应用模型配置中的自定义头（覆盖 spoof） */
+    for (size_t i = 0; i < job->extra_headers_count; i++) {
+        tmp_hdr_set(job->extra_headers[i].key, job->extra_headers[i].value);
+    }
+
+    job->headers = NULL;
+    for (int i = 0; i < tmp_count; i++) {
+        char full[4224];
+        snprintf(full, sizeof(full), "%s: %s", tmp[i].key, tmp[i].value);
+        job->headers = curl_slist_append(job->headers, full);
+    }
+    /* 打印发送给上游的请求头 */
+    for (int i = 0; i < tmp_count; i++) {
+        log_msg("DEBUG", "UP_HDR %s=%s", tmp[i].key, tmp[i].value);
     }
     curl_easy_setopt(job->easy, CURLOPT_HTTPHEADER, job->headers);
     curl_multi_add_handle(w->multi, job->easy);
@@ -734,6 +783,14 @@ void job_free(gateway_job_t *job) {
     free(job->upstream_model); job->upstream_model = NULL;
     membuf_free(&job->upstream_body);
     stream_state_free(&job->stream_state);
+    if (job->extra_headers) {
+        for (size_t i = 0; i < job->extra_headers_count; i++) {
+            free(job->extra_headers[i].key);
+            free(job->extra_headers[i].value);
+        }
+        free(job->extra_headers);
+        job->extra_headers = NULL;
+    }
     if (job->headers) { curl_slist_free_all(job->headers); job->headers = NULL; }
     if (job->easy) { curl_easy_cleanup(job->easy); job->easy = NULL; }
     if (job->client_req && !job->response_sent) {

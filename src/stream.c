@@ -18,7 +18,8 @@
 #define TEXT_FLUSH_THRESHOLD 4096
 
 static void stream_flush_thinking(gateway_job_t *job);
-
+static char *passthrough_anthropic_sse_override(const char *line, const char *gateway_model);
+static char *passthrough_openai_sse_override(const char *line, const char *gateway_model);
 /* 刷新待发送的文本缓冲区
  * 
  * 内部辅助函数，将 text_pending 缓冲区中的累积文本
@@ -468,6 +469,40 @@ void stream_finish(gateway_job_t *job) {
         }
     }
 }
+/* 在流结束前刷新 linebuf 中残留的未闭合 SSE 行
+ *
+ * 适用：passthrough 模式下上游最后一个包可能不带 \n，导致 linebuf
+ * 中残留一行未被 stream_parse_append 处理的数据。本函数在
+ * complete_stream_job 调用 stream_finish 之前执行，将该行补回 \n
+ * 后发送给客户端。
+ *
+ * 注意：stream_parse_append 现在每处理完一行都会立即 memmove 更新
+ * linebuf，因此 linebuf 中只包含真正未处理的数据，不会重复发送
+ * 已处理过的行。 */
+void stream_flush_linebuf(gateway_job_t *job) {
+    stream_state_t *s = &job->stream_state;
+    if (job->passthrough == PT_NONE) return;
+    if (!s->linebuf || s->linebuf_len == 0) return;
+    size_t effective_len = strlen(s->linebuf);
+    if (effective_len == 0) return;
+    char *out_line = NULL;
+    if (job->passthrough == PT_ANTHROPIC) {
+        out_line = passthrough_anthropic_sse_override(s->linebuf, job->client_model);
+    } else if (job->passthrough == PT_OPENAI) {
+        out_line = passthrough_openai_sse_override(s->linebuf, job->client_model);
+    }
+    if (out_line) {
+        stream_send_chunk(job, out_line);
+        free(out_line);
+    } else {
+        membuf_t b; membuf_init(&b);
+        membuf_append(&b, s->linebuf, effective_len);
+        membuf_append(&b, "\n", 1);
+        stream_send_chunk(job, b.ptr);
+        membuf_free(&b);
+    }
+}
+
 
 /* 释放流状态内存
  * 
@@ -991,6 +1026,9 @@ void stream_parse_append(gateway_job_t *job, const char *ptr, size_t n) {
     char *nl;
     while ((nl = strchr(start, '\n')) != NULL) {
         *nl = 0;
+        /* 保存当前行副本，随后 memmove 会覆盖 linebuf 中本行数据 */
+        char *saved = strdup(start);
+        if (!saved) return;
         /* 透传模式：按需覆盖 / 注入 model 字段后按行转发 */
         if (job->passthrough != PT_NONE) {
             char *out_line = NULL;
@@ -1003,13 +1041,24 @@ void stream_parse_append(gateway_job_t *job, const char *ptr, size_t n) {
                 stream_send_chunk(job, out_line);
                 free(out_line);
             } else {
-                /* 透传 + 非目标行（event: / id: / retry: / 空行）：原样转发 */
-                stream_send_chunk(job, start);
+                /* 透传 + 非目标行（event: / id: / retry: / 空行）：原样转发，补回换行符 */
+                membuf_t b; membuf_init(&b);
+                membuf_append(&b, start, strlen(start));
+                membuf_append(&b, "\n", 1);
+                stream_send_chunk(job, b.ptr);
+                membuf_free(&b);
             }
         }
-        process_sse_line(job, start);
-        if (s->ended) return;
+        /* 先更新 linebuf，去掉已处理的行；这样 stream_finish 被调用时
+         * 只看到真正未处理的数据，不会重复发送已处理行。 */
         start = nl + 1;
+        size_t rem = strlen(start);
+        memmove(s->linebuf, start, rem + 1);
+        s->linebuf_len = rem;
+        start = s->linebuf;
+        process_sse_line(job, saved);
+        free(saved);
+        if (s->ended) return;
     }
     size_t rem = strlen(start);
     memmove(s->linebuf, start, rem + 1);
