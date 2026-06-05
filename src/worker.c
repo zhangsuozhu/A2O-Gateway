@@ -452,6 +452,14 @@ static void worker_add_easy(worker_t *w, gateway_job_t *job) {
 
     job->headers = NULL;
     job->headers = curl_slist_append(job->headers, "Content-Type: application/json");
+    /* 透传客户端 User-Agent；为空时模拟常见 OpenAI 客户端 */
+    if (job->client_user_agent && *job->client_user_agent) {
+        char ua_hdr[4096];
+        snprintf(ua_hdr, sizeof(ua_hdr), "User-Agent: %s", job->client_user_agent);
+        job->headers = curl_slist_append(job->headers, ua_hdr);
+    } else {
+        job->headers = curl_slist_append(job->headers, "User-Agent: OpenAI-Client/1.0");
+    }
     if (job->passthrough == PT_ANTHROPIC) {
         /* Anthropic API 使用 x-api-key 和 anthropic-version 头 */
         if (job->api_key && *job->api_key) {
@@ -720,7 +728,8 @@ void job_free(gateway_job_t *job) {
     free(job->request_body); job->request_body = NULL;
     free(job->upstream_url); job->upstream_url = NULL;
     free(job->api_key); job->api_key = NULL;
-        free(job->provider_name); job->provider_name = NULL;
+    free(job->provider_name); job->provider_name = NULL;
+    free(job->client_user_agent); job->client_user_agent = NULL;
     free(job->client_model); job->client_model = NULL;
     free(job->upstream_model); job->upstream_model = NULL;
     membuf_free(&job->upstream_body);

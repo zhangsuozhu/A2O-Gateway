@@ -273,6 +273,7 @@ struct gateway_job {
     char *upstream_url;     /**< 上游提供商的 API 端点完整 URL */
     char *api_key;          /**< 用于上游认证的实际 API 密钥 */
     char *provider_name;    /**< 上游提供商名称（如 "anthropic"、"openai"），用于路由 */
+    char *client_user_agent; /**< 客户端 User-Agent，透传到上游 */
 
     /* 模型映射 */
     char *client_model;     /**< 客户端请求的模型 ID（如 "claude-3-sonnet"） */

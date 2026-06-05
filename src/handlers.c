@@ -404,6 +404,8 @@ static void handle_messages(struct evhttp_request *req) {
     job->upstream_url = url;
     job->api_key = xstrdup(api_key ? api_key : "");
     job->provider_name = xstrdup(provider ? provider : "openai-compatible");
+    const char *ua = header_get(req, "User-Agent");
+    job->client_user_agent = xstrdup(ua ? ua : "");
     job->client_model = xstrdup(client_model ? client_model : "claude-code-gateway");
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
     job->stream = stream;
@@ -509,6 +511,8 @@ static void handle_chat_completions(struct evhttp_request *req) {
     job->upstream_url = url;
     job->api_key = xstrdup(api_key ? api_key : "");
     job->provider_name = xstrdup(provider ? provider : "openai-compatible");
+    const char *ua = header_get(req, "User-Agent");
+    job->client_user_agent = xstrdup(ua ? ua : "");
     job->client_model = xstrdup(client_model ? client_model : "openai-passthrough");
     job->upstream_model = xstrdup(upstream_model ? upstream_model : "model");
     job->stream = stream;
