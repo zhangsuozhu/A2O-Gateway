@@ -19,6 +19,11 @@
 #include <event2/http.h>
 #include <event2/thread.h>
 #include <curl/curl.h>
+#ifdef HAVE_SSL
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <event2/bufferevent_ssl.h>
+#endif
 #include <cjson/cJSON.h>
 #include <signal.h>
 #include <stdio.h>
@@ -60,6 +65,12 @@ struct event_base *BASE = NULL;
 
 /** @brief libevent HTTP 服务器对象，负责接收和分发客户端请求 */
 struct evhttp *HTTP = NULL;
+#ifdef HAVE_SSL
+/** @brief libevent HTTPS 服务器对象，仅当 SSL 配置启用时创建 */
+static struct evhttp *G_HTTPS = NULL;
+/** @brief OpenSSL SSL/TLS 上下文，仅当 SSL 配置启用时创建 */
+static SSL_CTX *G_SSL_CTX = NULL;
+#endif
 
 /** @brief worker 线程池数组，长度由 WORKER_COUNT 决定（最大 MAX_WORKERS） */
 worker_t WORKERS[MAX_WORKERS];
@@ -237,6 +248,89 @@ static void daemon_fork(void) {
  *   - curl_global_cleanup：清理 libcurl 全局资源；
  *   - log_open(NULL)：关闭日志文件。
  */
+#ifdef HAVE_SSL
+/**
+ * @brief SSL bufferevent 创建回调，用于 evhttp_set_bevcb
+ *
+ * libevent 在每次接受新的 HTTPS 连接时调用此回调创建 SSL-wrapped bufferevent。
+ * arg 为 SSL_CTX 指针，通过 bufferevent_openssl_socket_new 创建服务器模式 SSL 连接。
+ * fd = -1 表示 libevent 会在回调返回后自动设置已接受的 socket fd。
+ */
+static struct bufferevent *ssl_bev_cb(struct event_base *base, void *arg) {
+    (void)base;
+    SSL_CTX *ctx = (SSL_CTX *)arg;
+    SSL *ssl = SSL_new(ctx);
+    if (!ssl) return NULL;
+    return bufferevent_openssl_socket_new(base, -1, ssl, BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
+}
+#endif
+#ifdef HAVE_SSL
+/**
+ * @brief 自动生成自签名 SSL 证书和私钥并写入文件
+ *
+ * 当配置指定了 ssl_cert_file / ssl_key_file 但文件不存在时调用。
+ * 使用 OpenSSL API 生成 2048 位 RSA 密钥对和有效期为 365 天的自签名 X.509 证书，
+ * 以 PEM 格式写入文件，文件权限为 600。
+ *
+ * @param cert_path  证书 PEM 文件路径
+ * @param key_path   私钥 PEM 文件路径
+ * @param common_name 证书 CN (Common Name)
+ * @return 0 成功，-1 失败
+ */
+static int generate_self_signed_cert(const char *cert_path, const char *key_path, const char *common_name) {
+    int ret = -1;
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *ctx = NULL;
+    X509 *x509 = NULL;
+    FILE *f = NULL;
+
+    /* 1. 生成 RSA 2048 密钥对 */
+    ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+    if (!ctx) goto cleanup;
+    if (EVP_PKEY_keygen_init(ctx) <= 0) goto cleanup;
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) goto cleanup;
+    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) goto cleanup;
+
+    /* 2. 创建 X.509 自签名证书 */
+    x509 = X509_new();
+    if (!x509) goto cleanup;
+    if (!ASN1_INTEGER_set(X509_get_serialNumber(x509), 1)) goto cleanup;
+    if (!X509_gmtime_adj(X509_get_notBefore(x509), 0)) goto cleanup;
+    if (!X509_gmtime_adj(X509_get_notAfter(x509), 365 * 86400)) goto cleanup;
+    if (!X509_set_pubkey(x509, pkey)) goto cleanup;
+
+    /* 3. 设置 Subject / Issuer（自签名，两者相同） */
+    X509_NAME *name = X509_get_subject_name(x509);
+    if (!name) goto cleanup;
+    if (!X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
+            (const unsigned char *)common_name, -1, -1, 0)) goto cleanup;
+    if (!X509_set_issuer_name(x509, name)) goto cleanup;
+
+    /* 4. 签名 */
+    if (!X509_sign(x509, pkey, EVP_sha256())) goto cleanup;
+
+    /* 5. 写入私钥文件（权限 600） */
+    umask(0077);
+    f = fopen(key_path, "w");
+    if (!f) { log_msg("ERROR", "cannot write SSL key: %s", key_path); goto cleanup; }
+    if (!PEM_write_PrivateKey(f, pkey, NULL, NULL, 0, NULL, NULL)) goto cleanup;
+    fclose(f); f = NULL;
+
+    /* 6. 写入证书文件（权限 600） */
+    f = fopen(cert_path, "w");
+    if (!f) { log_msg("ERROR", "cannot write SSL cert: %s", cert_path); goto cleanup; }
+    if (!PEM_write_X509(f, x509)) goto cleanup;
+    fclose(f); f = NULL;
+
+    ret = 0;
+cleanup:
+    if (f) fclose(f);
+    if (x509) X509_free(x509);
+    if (pkey) EVP_PKEY_free(pkey);
+    if (ctx) EVP_PKEY_CTX_free(ctx);
+    return ret;
+}
+#endif
 int main(int argc, char **argv) {
     const char *config_path = getenv("GATEWAY_CONFIG");
     if (!config_path) config_path = DEFAULT_CONFIG_PATH;
@@ -298,31 +392,118 @@ int main(int argc, char **argv) {
     long port = 8081;
     /* Read listen_port from config via a temp copy */
     char *cfg_json = config_masked_json();
+    bool http_enabled = true;
+    bool https_enabled = true;
     cJSON *root = cJSON_Parse(cfg_json ? cfg_json : "{}");
     free(cfg_json);
     if (root) {
         cJSON *p = cJSON_GetObjectItemCaseSensitive(root, "listen_port");
         if (cJSON_IsNumber(p)) port = (long)p->valuedouble;
+        cJSON *hep = cJSON_GetObjectItemCaseSensitive(root, "http_enabled");
+        cJSON *hsep = cJSON_GetObjectItemCaseSensitive(root, "https_enabled");
+        http_enabled = !cJSON_IsFalse(hep);
+        https_enabled = !cJSON_IsFalse(hsep);
         cJSON_Delete(root);
     }
     workers_start();
     BASE = event_base_new();
     event_base_priority_init(BASE, 1);
-    HTTP = evhttp_new(BASE);
-    evhttp_set_allowed_methods(HTTP, EVHTTP_REQ_GET | EVHTTP_REQ_POST | EVHTTP_REQ_PUT | EVHTTP_REQ_OPTIONS);
-    evhttp_set_gencb(HTTP, handle_root, NULL);
-    if (evhttp_bind_socket(HTTP, host ? host : "0.0.0.0", (uint16_t)port) != 0) {
-        log_msg("ERROR", "bind failed on %s:%ld", host ? host : "0.0.0.0", port);
-        return 1;
+    if (http_enabled) {
+        HTTP = evhttp_new(BASE);
+        evhttp_set_allowed_methods(HTTP, EVHTTP_REQ_GET | EVHTTP_REQ_POST | EVHTTP_REQ_PUT | EVHTTP_REQ_OPTIONS);
+        evhttp_set_gencb(HTTP, handle_root, NULL);
+        if (evhttp_bind_socket(HTTP, host ? host : "0.0.0.0", (uint16_t)port) != 0) {
+            log_msg("ERROR", "HTTP bind failed on %s:%ld", host ? host : "0.0.0.0", port);
+            return 1;
+        }
+     }
+#ifdef HAVE_SSL
+    /* 可选 HTTPS 侦听：当 ssl_cert_file 和 ssl_key_file 同时存在时启用 */
+    char *ssl_cert = config_get_string_copy("ssl_cert_file");
+    char *ssl_key = config_get_string_copy("ssl_key_file");
+    if (ssl_cert && ssl_cert[0] && ssl_key && ssl_key[0]) {
+        SSL_library_init();
+        OpenSSL_add_all_algorithms();
+        SSL_load_error_strings();
+
+        /* https_enabled: 设为 false 可独立关闭 HTTPS（即使 ssl_cert_file 已配置） */
+        bool ssl_auto_ok = https_enabled;
+        if (!https_enabled) {
+            log_msg("DEBUG", "HTTPS disabled by config (https_enabled=false)");
+        }
+
+        /* 自动生成自签名证书：如果证书或私钥文件不存在，自动创建 */
+        if (ssl_auto_ok) {
+            bool cert_exists = (access(ssl_cert, F_OK) == 0);
+            bool key_exists = (access(ssl_key, F_OK) == 0);
+            if (!cert_exists || !key_exists) {
+                log_msg("WARN", "SSL cert/key not found, auto-generating self-signed cert");
+                const char *cn = host ? host : "localhost";
+                if (generate_self_signed_cert(ssl_cert, ssl_key, cn) != 0) {
+                    log_msg("ERROR", "Failed to auto-generate SSL certificate, HTTPS disabled");
+                    ssl_auto_ok = false;
+                } else {
+                    log_msg("INFO", "Self-signed SSL certificate written to %s / %s (CN=%s)", ssl_cert, ssl_key, cn);
+                }
+            }
+        }
+
+        if (ssl_auto_ok) {
+            G_SSL_CTX = SSL_CTX_new(TLS_server_method());
+            if (!G_SSL_CTX) {
+                log_msg("ERROR", "Failed to create SSL context");
+            } else if (SSL_CTX_use_certificate_chain_file(G_SSL_CTX, ssl_cert) <= 0) {
+                log_msg("ERROR", "Failed to load SSL cert: %s", ssl_cert);
+                SSL_CTX_free(G_SSL_CTX);
+                G_SSL_CTX = NULL;
+            } else if (SSL_CTX_use_PrivateKey_file(G_SSL_CTX, ssl_key, SSL_FILETYPE_PEM) <= 0) {
+                log_msg("ERROR", "Failed to load SSL key: %s", ssl_key);
+                SSL_CTX_free(G_SSL_CTX);
+                G_SSL_CTX = NULL;
+            } else {
+                long ssl_port = 8443;
+                char *ssl_json = config_masked_json();
+                cJSON *sroot = cJSON_Parse(ssl_json ? ssl_json : "{}");
+                free(ssl_json);
+                if (sroot) {
+                    cJSON *sp = cJSON_GetObjectItemCaseSensitive(sroot, "ssl_port");
+                    if (cJSON_IsNumber(sp)) ssl_port = (long)sp->valuedouble;
+                    cJSON_Delete(sroot);
+                }
+                G_HTTPS = evhttp_new(BASE);
+                evhttp_set_allowed_methods(G_HTTPS, EVHTTP_REQ_GET | EVHTTP_REQ_POST | EVHTTP_REQ_PUT | EVHTTP_REQ_OPTIONS);
+                evhttp_set_gencb(G_HTTPS, handle_root, NULL);
+                evhttp_set_bevcb(G_HTTPS, ssl_bev_cb, G_SSL_CTX);
+                if (evhttp_bind_socket(G_HTTPS, host ? host : "0.0.0.0", (uint16_t)ssl_port) != 0) {
+                    log_msg("ERROR", "HTTPS bind failed on %s:%ld", host ? host : "0.0.0.0", ssl_port);
+                    evhttp_free(G_HTTPS);
+                    G_HTTPS = NULL;
+                    SSL_CTX_free(G_SSL_CTX);
+                    G_SSL_CTX = NULL;
+                } else {
+                    log_msg("INFO", "HTTPS listening on https://%s:%ld", host ? host : "0.0.0.0", ssl_port);
+                    log_msg("INFO", "admin UI over HTTPS: https://%s:%ld/admin", host ? host : "127.0.0.1", ssl_port);
+                }
+            }
+        }
+    } else {
+        log_msg("DEBUG", "HTTPS disabled (ssl_cert_file or ssl_key_file not set)");
     }
+    free(ssl_cert);
+    free(ssl_key);
+#else
+    (void)0;
+#endif
     struct event *sigint_ev = evsignal_new(BASE, SIGINT, on_signal, NULL);
     struct event *sigterm_ev = evsignal_new(BASE, SIGTERM, on_signal, NULL);
     struct event *sighup_ev = evsignal_new(BASE, SIGHUP, on_sighup, NULL);
     event_add(sigint_ev, NULL);
     event_add(sigterm_ev, NULL);
     event_add(sighup_ev, NULL);
-    log_msg("INFO", "Claude-Code OpenAI-compatible gateway listening on http://%s:%ld", host ? host : "0.0.0.0", port);
-    log_msg("INFO", "admin UI: http://%s:%ld/admin", host ? host : "127.0.0.1", port);
+    if (http_enabled) {
+        log_msg("INFO", "Claude-Code gateway HTTP listening on http://%s:%ld", host ? host : "0.0.0.0", port);
+        log_msg("INFO", "admin UI: http://%s:%ld/admin", host ? host : "127.0.0.1", port);
+    }
     log_msg("INFO", "log_level=%s realtime_print=%s",
         log_get_level(), rt_mode_name());
     free(host);
@@ -333,6 +514,10 @@ int main(int argc, char **argv) {
     evhttp_free(HTTP);
     event_free(sigint_ev);
     event_free(sigterm_ev);
+#ifdef HAVE_SSL
+    if (G_HTTPS) { evhttp_free(G_HTTPS); G_HTTPS = NULL; }
+    if (G_SSL_CTX) { SSL_CTX_free(G_SSL_CTX); G_SSL_CTX = NULL; }
+#endif
     event_free(sighup_ev);
     event_base_free(BASE);
     /* Cleanup config via a one-shot */

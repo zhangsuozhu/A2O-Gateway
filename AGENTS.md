@@ -48,6 +48,8 @@ brew install cmake pkg-config libevent curl cjson
 3. Run with the local config path (not `gateway.json`)
 
 Key fields:
+- `http_enabled` — Enable HTTP listener (default true; set false for HTTPS-only mode)
+- `https_enabled` — Enable HTTPS listener (default true; requires ssl_cert_file + ssl_key_file or auto-generation)
 - `gateway_api_key` — Claude Code auth token
 - `admin_password` — Web UI login password (used to obtain session)
 - `admin_token` — Web UI bearer token (auto-synced with `admin_password`)
@@ -55,6 +57,9 @@ Key fields:
 - `models[].id` — model name Claude Code uses (`--model`)
 - `models[].upstream_model` — real model name sent to provider
 - `models[].extra_body` — provider-specific params (e.g., `{"enable_search": true}`)
+- `ssl_cert_file` — PEM certificate file path (optional; enables HTTPS when set with `ssl_key_file`)
+- `ssl_key_file` — PEM private key file path (optional)
+- `ssl_port` — HTTPS listen port (default 8443)
 
 ## Testing
 

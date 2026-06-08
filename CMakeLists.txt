@@ -15,6 +15,10 @@ if(NOT EXISTS "${CJSON_INCLUDE_DIRS}/cJSON.h")
     find_path(CJSON_INCLUDE_DIRS cJSON.h /usr/include/cjson /usr/local/include/cjson)
 endif()
 
+# Optional: OpenSSL + libevent_openssl for HTTPS listening
+pkg_check_modules(LIBEVENT_SSL libevent_openssl)
+pkg_check_modules(OPENSSL openssl)
+
 # Generate embedded admin.html C file when the source HTML changes
 add_custom_command(
     OUTPUT ${CMAKE_SOURCE_DIR}/src/generated/admin_html.c
@@ -45,6 +49,12 @@ add_executable(cc-oai-gateway ${GATEWAY_SOURCES})
 target_include_directories(cc-oai-gateway PRIVATE src src/sqlite3 ${LIBEVENT_INCLUDE_DIRS} ${LIBCURL_INCLUDE_DIRS} ${CJSON_INCLUDE_DIRS})
 target_link_directories(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARY_DIRS} ${LIBCURL_LIBRARY_DIRS} ${CJSON_LIBRARY_DIRS})
 target_link_libraries(cc-oai-gateway PRIVATE ${LIBEVENT_LIBRARIES} ${LIBCURL_LIBRARIES} ${CJSON_LIBRARIES} pthread m dl)
+if(LIBEVENT_SSL_FOUND AND OPENSSL_FOUND)
+    target_compile_definitions(cc-oai-gateway PRIVATE HAVE_SSL)
+    target_include_directories(cc-oai-gateway PRIVATE ${LIBEVENT_SSL_INCLUDE_DIRS} ${OPENSSL_INCLUDE_DIRS})
+    target_link_directories(cc-oai-gateway PRIVATE ${LIBEVENT_SSL_LIBRARY_DIRS} ${OPENSSL_LIBRARY_DIRS})
+    target_link_libraries(cc-oai-gateway PRIVATE ${LIBEVENT_SSL_LIBRARIES} ${OPENSSL_LIBRARIES})
+endif()
 
 enable_testing()
 add_executable(test_convert tests/test_convert.c tests/test_stubs.c src/convert.c src/config.c src/log.c)
