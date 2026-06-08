@@ -383,6 +383,15 @@ extern unsigned long RR;
  */
 extern volatile sig_atomic_t STOP;
 
+/**
+ * @brief CA 证书 PEM 文本，用于管理员页面下载
+ *
+ * main.c 中生成 CA 证书时将其 PEM 编码到此缓冲区，
+ * handlers.c 中 /admin/ca.pem 路由直接从此处读取。
+ */
+extern char *g_ca_cert_pem;
+extern long g_ca_cert_pem_len;
+
 /* ====================================================================
  * libevent 前向声明
  * ==================================================================== */

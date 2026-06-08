@@ -178,6 +178,18 @@
     <button class="ghost sm" id="pwdBtn" onclick="showPwdModal()" style="display:none">🔑 修改密码</button>
     <button class="ghost sm" id="logoutBtn" onclick="doLogout()" style="display:none">🚪 退出</button>
   </div>
+    <span style="position:relative;display:inline-flex;align-items:center;gap:4px">
+      <a href="/admin/ca.pem" download style="color:#e2e8f0;text-decoration:none;font-size:13px;padding:6px 12px;border:1px solid #1e2d4a;border-radius:8px;background:#131c31;transition:background .2s" title="下载 CA 证书" onmouseover="this.style.background='#1e2d4a'" onmouseout="this.style.background='#131c31'">🛡️ 下载 CA 证书</a>
+      <span id="caHelpBtn" onclick="toggleCaHelp()" style="cursor:pointer;color:#8899b4;font-size:16px;padding:2px 6px;border-radius:50%;transition:color .2s" onmouseover="this.style.color='#e2e8f0'" onmouseout="this.style.color='#8899b4'" title="如何安装 CA 证书">ℹ️</span>
+      <div id="caHelpBox" style="display:none;position:absolute;top:100%;right:0;margin-top:8px;background:#1e2d4a;border:1px solid #2a3d5e;border-radius:10px;padding:16px;width:420px;z-index:100;font-size:13px;line-height:1.6;color:#c8d0dc;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+        <div style="font-weight:600;margin-bottom:8px;color:#e2e8f0">📖 安装 CA 证书到信任库</div>
+        <div style="margin-bottom:10px"><b>Linux (Debian/Ubuntu)</b></div>
+        <code style="display:block;background:#0b1120;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px">sudo cp ca-cert.pem /usr/local/share/ca-certificates/zzgateway.crt<br>sudo update-ca-certificates</code>
+        <div style="margin-bottom:10px"><b>Windows (管理员 PowerShell)</b></div>
+        <code style="display:block;background:#0b1120;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px">certutil -addstore Root ca-cert.pem</code>
+        <div style="color:#8899b4;font-size:12px">安装后重启浏览器，HTTPS 不再报警告 ✅</div>
+      </div>
+    </span>
 </header>
 
 <main>
@@ -927,6 +939,12 @@ function confirmAdd() {
 }
 
 // ── 连接信息 ──
+
+// ── CA 安装帮助 ──
+function toggleCaHelp() {
+  var box = $('caHelpBox');
+  box.style.display = (box.style.display === 'none') ? 'block' : 'none';
+}
 function toggleEnv() {
   var sec = $('envSection');
   var btn = $('envBtn');

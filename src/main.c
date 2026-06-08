@@ -22,6 +22,8 @@
 #ifdef HAVE_SSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/x509v3.h>
+#include <arpa/inet.h>
 #include <event2/bufferevent_ssl.h>
 #endif
 #include <cjson/cJSON.h>
@@ -44,6 +46,7 @@
 #include "handlers.h"
 #include "stats.h"
 #include "db.h"
+#include "generated/ca_embedded.h"
 
 /* ====================================================================
  * 精灵模式（daemon）相关常量
@@ -70,6 +73,9 @@ struct evhttp *HTTP = NULL;
 static struct evhttp *G_HTTPS = NULL;
 /** @brief OpenSSL SSL/TLS 上下文，仅当 SSL 配置启用时创建 */
 static SSL_CTX *G_SSL_CTX = NULL;
+/** @brief CA 证书 PEM 文本，供管理员页面下载安装 */
+char *g_ca_cert_pem = NULL;
+long g_ca_cert_pem_len = 0;
 #endif
 
 /** @brief worker 线程池数组，长度由 WORKER_COUNT 决定（最大 MAX_WORKERS） */
@@ -264,71 +270,89 @@ static struct bufferevent *ssl_bev_cb(struct event_base *base, void *arg) {
     return bufferevent_openssl_socket_new(base, -1, ssl, BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
 }
 #endif
+
 #ifdef HAVE_SSL
-/**
- * @brief 自动生成自签名 SSL 证书和私钥并写入文件
- *
- * 当配置指定了 ssl_cert_file / ssl_key_file 但文件不存在时调用。
- * 使用 OpenSSL API 生成 2048 位 RSA 密钥对和有效期为 365 天的自签名 X.509 证书，
- * 以 PEM 格式写入文件，文件权限为 600。
- *
- * @param cert_path  证书 PEM 文件路径
- * @param key_path   私钥 PEM 文件路径
- * @param common_name 证书 CN (Common Name)
- * @return 0 成功，-1 失败
- */
-static int generate_self_signed_cert(const char *cert_path, const char *key_path, const char *common_name) {
-    int ret = -1;
-    EVP_PKEY *pkey = NULL;
+static int sign_server_cert_with_ca(
+    X509 *ca_cert, EVP_PKEY *ca_pkey,
+    X509 **out_cert, EVP_PKEY **out_key,
+    const char *extra_ip)
+{
+    EVP_PKEY *server_pkey = NULL;
     EVP_PKEY_CTX *ctx = NULL;
-    X509 *x509 = NULL;
-    FILE *f = NULL;
+    X509 *server_cert = NULL;
 
-    /* 1. 生成 RSA 2048 密钥对 */
     ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
-    if (!ctx) goto cleanup;
-    if (EVP_PKEY_keygen_init(ctx) <= 0) goto cleanup;
-    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) goto cleanup;
-    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) goto cleanup;
+    if (!ctx) return -1;
+    if (EVP_PKEY_keygen_init(ctx) <= 0) goto fail;
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) goto fail;
+    if (EVP_PKEY_keygen(ctx, &server_pkey) <= 0) goto fail;
+    EVP_PKEY_CTX_free(ctx); ctx = NULL;
 
-    /* 2. 创建 X.509 自签名证书 */
-    x509 = X509_new();
-    if (!x509) goto cleanup;
-    if (!ASN1_INTEGER_set(X509_get_serialNumber(x509), 1)) goto cleanup;
-    if (!X509_gmtime_adj(X509_get_notBefore(x509), 0)) goto cleanup;
-    if (!X509_gmtime_adj(X509_get_notAfter(x509), 365 * 86400)) goto cleanup;
-    if (!X509_set_pubkey(x509, pkey)) goto cleanup;
+    server_cert = X509_new();
+    if (!server_cert) goto fail;
+    X509_set_version(server_cert, 2);
+    if (!ASN1_INTEGER_set(X509_get_serialNumber(server_cert), (long)time(NULL))) goto fail;
+    if (!X509_gmtime_adj(X509_get_notBefore(server_cert), 0)) goto fail;
+    if (!X509_gmtime_adj(X509_get_notAfter(server_cert), 3650 * 86400)) goto fail;
+    if (!X509_set_pubkey(server_cert, server_pkey)) goto fail;
 
-    /* 3. 设置 Subject / Issuer（自签名，两者相同） */
-    X509_NAME *name = X509_get_subject_name(x509);
-    if (!name) goto cleanup;
+    X509_NAME *ca_subject = X509_get_subject_name(ca_cert);
+    if (!ca_subject) goto fail;
+    if (!X509_set_issuer_name(server_cert, ca_subject)) goto fail;
+
+    X509_NAME *name = X509_NAME_new();
+    if (!name) goto fail;
     if (!X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
-            (const unsigned char *)common_name, -1, -1, 0)) goto cleanup;
-    if (!X509_set_issuer_name(x509, name)) goto cleanup;
+            (const unsigned char *)"LLM-ROUTER", -1, -1, 0)) goto fail;
+    if (!X509_set_subject_name(server_cert, name)) goto fail;
+    X509_NAME_free(name);
 
-    /* 4. 签名 */
-    if (!X509_sign(x509, pkey, EVP_sha256())) goto cleanup;
+    /* SAN: IP:127.0.0.1 + optional extra IP (from -c), DNS:localhost */
+    {
+        unsigned char ip127[] = {127,0,0,1};
+        ASN1_OCTET_STRING *oct127 = ASN1_OCTET_STRING_new();
+        ASN1_OCTET_STRING_set(oct127, ip127, 4);
+        GENERAL_NAME *g127 = GENERAL_NAME_new();
+        GENERAL_NAME_set0_value(g127, GEN_IPADD, oct127);
 
-    /* 5. 写入私钥文件（权限 600） */
-    umask(0077);
-    f = fopen(key_path, "w");
-    if (!f) { log_msg("ERROR", "cannot write SSL key: %s", key_path); goto cleanup; }
-    if (!PEM_write_PrivateKey(f, pkey, NULL, NULL, 0, NULL, NULL)) goto cleanup;
-    fclose(f); f = NULL;
+        ASN1_IA5STRING *dns = ASN1_IA5STRING_new();
+        ASN1_STRING_set(dns, "localhost", 9);
+        GENERAL_NAME *gdns = GENERAL_NAME_new();
+        GENERAL_NAME_set0_value(gdns, GEN_DNS, dns);
 
-    /* 6. 写入证书文件（权限 600） */
-    f = fopen(cert_path, "w");
-    if (!f) { log_msg("ERROR", "cannot write SSL cert: %s", cert_path); goto cleanup; }
-    if (!PEM_write_X509(f, x509)) goto cleanup;
-    fclose(f); f = NULL;
+        STACK_OF(GENERAL_NAME) *sk = sk_GENERAL_NAME_new_null();
+        sk_GENERAL_NAME_push(sk, g127);
+        sk_GENERAL_NAME_push(sk, gdns);
 
-    ret = 0;
-cleanup:
-    if (f) fclose(f);
-    if (x509) X509_free(x509);
-    if (pkey) EVP_PKEY_free(pkey);
+        if (extra_ip && *extra_ip) {
+            unsigned char buf[16];
+            if (inet_pton(AF_INET, extra_ip, buf) == 1) {
+                ASN1_OCTET_STRING *oct = ASN1_OCTET_STRING_new();
+                if (oct && ASN1_OCTET_STRING_set(oct, buf, 4)) {
+                    GENERAL_NAME *g = GENERAL_NAME_new();
+                    if (g) {
+                        GENERAL_NAME_set0_value(g, GEN_IPADD, oct);
+                        sk_GENERAL_NAME_push(sk, g);
+                    } else { ASN1_OCTET_STRING_free(oct); }
+                } else { if (oct) ASN1_OCTET_STRING_free(oct); }
+            }
+        }
+
+        X509_add1_ext_i2d(server_cert, NID_subject_alt_name, sk, 0, 0);
+        sk_GENERAL_NAME_pop_free(sk, GENERAL_NAME_free);
+    }
+
+    if (!X509_sign(server_cert, ca_pkey, EVP_sha256())) goto fail;
+
+    *out_cert = server_cert;
+    *out_key = server_pkey;
+    return 0;
+
+fail:
+    if (server_cert) X509_free(server_cert);
+    if (server_pkey) EVP_PKEY_free(server_pkey);
     if (ctx) EVP_PKEY_CTX_free(ctx);
-    return ret;
+    return -1;
 }
 #endif
 int main(int argc, char **argv) {
@@ -338,6 +362,7 @@ int main(int argc, char **argv) {
     long cli_port = -1;
     long cli_workers = -1;
     const char *cli_password = NULL;
+    const char *cli_cert_ip = NULL;
     /* 解析命令行参数：第一个非配置路径参数为 --daemon */
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--daemon") == 0 || strcmp(argv[i], "-d") == 0) {
@@ -349,6 +374,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "  -P, --password PASS  Admin web UI password (default: empty)\n");
             fprintf(stderr, "  -w, --workers NUM    Worker threads (default: 4, max: %d)\n", MAX_WORKERS);
             fprintf(stderr, "  -d, --daemon         Run as background daemon\n");
+            fprintf(stderr, "  -c, --cert-ip IP    Extra SAN IP for server cert (default: 127.0.0.1)\n");
             fprintf(stderr, "  -h, --help           Show this help\n");
             return 0;
         } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--file") == 0) {
@@ -359,6 +385,8 @@ int main(int argc, char **argv) {
             if (i + 1 < argc) cli_password = argv[++i];
         } else if (strcmp(argv[i], "-w") == 0 || strcmp(argv[i], "--workers") == 0) {
             if (i + 1 < argc) cli_workers = strtol(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--cert-ip") == 0) {
+            if (i + 1 < argc) cli_cert_ip = argv[++i];
         } else {
             config_path = argv[i];
         }
@@ -367,7 +395,9 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     if (evthread_use_pthreads() != 0) { fprintf(stderr, "evthread_use_pthreads failed\n"); return 1; }
     curl_global_init(CURL_GLOBAL_DEFAULT);
-    config_load(config_path, cli_port, cli_password, cli_workers);
+    if (config_load(config_path, cli_port, cli_password, cli_workers) != 0) {
+        return 1;
+    }
     stats_init();
 
     /* 精灵模式：fork 到后台运行（必须在创建任何线程之前执行） */
@@ -418,49 +448,63 @@ int main(int argc, char **argv) {
         }
      }
 #ifdef HAVE_SSL
-    /* 可选 HTTPS 侦听：当 ssl_cert_file 和 ssl_key_file 同时存在时启用 */
-    char *ssl_cert = config_get_string_copy("ssl_cert_file");
-    char *ssl_key = config_get_string_copy("ssl_key_file");
-    if (ssl_cert && ssl_cert[0] && ssl_key && ssl_key[0]) {
-        SSL_library_init();
-        OpenSSL_add_all_algorithms();
-        SSL_load_error_strings();
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
 
-        /* https_enabled: 设为 false 可独立关闭 HTTPS（即使 ssl_cert_file 已配置） */
-        bool ssl_auto_ok = https_enabled;
-        if (!https_enabled) {
-            log_msg("DEBUG", "HTTPS disabled by config (https_enabled=false)");
+    if (!https_enabled) {
+        log_msg("DEBUG", "HTTPS disabled by config (https_enabled=false)");
+    }
+
+    if (https_enabled) {
+        X509 *ca_cert = NULL;
+        EVP_PKEY *ca_key = NULL;
+        X509 *server_cert = NULL;
+        EVP_PKEY *server_key = NULL;
+        /* 从编译嵌入的 CA 证书解析 */
+        {
+            BIO *bio = BIO_new_mem_buf(CA_CERT, CA_CERT_LEN);
+            if (bio) { ca_cert = PEM_read_bio_X509(bio, NULL, NULL, NULL); BIO_free(bio); }
+            bio = BIO_new_mem_buf(CA_KEY, CA_KEY_LEN);
+            if (bio) { ca_key = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL); BIO_free(bio); }
         }
-
-        /* 自动生成自签名证书：如果证书或私钥文件不存在，自动创建 */
-        if (ssl_auto_ok) {
-            bool cert_exists = (access(ssl_cert, F_OK) == 0);
-            bool key_exists = (access(ssl_key, F_OK) == 0);
-            if (!cert_exists || !key_exists) {
-                log_msg("WARN", "SSL cert/key not found, auto-generating self-signed cert");
-                const char *cn = host ? host : "localhost";
-                if (generate_self_signed_cert(ssl_cert, ssl_key, cn) != 0) {
-                    log_msg("ERROR", "Failed to auto-generate SSL certificate, HTTPS disabled");
-                    ssl_auto_ok = false;
-                } else {
-                    log_msg("INFO", "Self-signed SSL certificate written to %s / %s (CN=%s)", ssl_cert, ssl_key, cn);
-                }
-            }
-        }
-
-        if (ssl_auto_ok) {
+        if (!ca_cert || !ca_key) {
+            log_msg("ERROR", "Failed to parse embedded CA certificate, HTTPS disabled");
+            if (ca_cert) X509_free(ca_cert);
+            if (ca_key) EVP_PKEY_free(ca_key);
+        } else if (sign_server_cert_with_ca(ca_cert, ca_key, &server_cert, &server_key, cli_cert_ip) != 0) {
+            log_msg("ERROR", "Failed to sign server certificate, HTTPS disabled");
+            X509_free(ca_cert);
+            EVP_PKEY_free(ca_key);
+        } else {
             G_SSL_CTX = SSL_CTX_new(TLS_server_method());
             if (!G_SSL_CTX) {
                 log_msg("ERROR", "Failed to create SSL context");
-            } else if (SSL_CTX_use_certificate_chain_file(G_SSL_CTX, ssl_cert) <= 0) {
-                log_msg("ERROR", "Failed to load SSL cert: %s", ssl_cert);
+            } else if (SSL_CTX_use_certificate(G_SSL_CTX, server_cert) <= 0) {
+                log_msg("ERROR", "Failed to load server cert into SSL context");
                 SSL_CTX_free(G_SSL_CTX);
                 G_SSL_CTX = NULL;
-            } else if (SSL_CTX_use_PrivateKey_file(G_SSL_CTX, ssl_key, SSL_FILETYPE_PEM) <= 0) {
-                log_msg("ERROR", "Failed to load SSL key: %s", ssl_key);
+            } else if (SSL_CTX_use_PrivateKey(G_SSL_CTX, server_key) <= 0) {
+                log_msg("ERROR", "Failed to load server key into SSL context");
                 SSL_CTX_free(G_SSL_CTX);
                 G_SSL_CTX = NULL;
             } else {
+                /* PEM-encode CA cert for admin download */
+                BIO *bio = BIO_new(BIO_s_mem());
+                if (bio) {
+                    if (PEM_write_bio_X509(bio, ca_cert)) {
+                        char *pem_data;
+                        long pem_len = BIO_get_mem_data(bio, &pem_data);
+                        g_ca_cert_pem = malloc(pem_len + 1);
+                        if (g_ca_cert_pem) {
+                            memcpy(g_ca_cert_pem, pem_data, pem_len);
+                            g_ca_cert_pem[pem_len] = '\0';
+                            g_ca_cert_pem_len = pem_len;
+                        }
+                    }
+                    BIO_free(bio);
+                }
+
                 long ssl_port = 8443;
                 char *ssl_json = config_masked_json();
                 cJSON *sroot = cJSON_Parse(ssl_json ? ssl_json : "{}");
@@ -485,12 +529,14 @@ int main(int argc, char **argv) {
                     log_msg("INFO", "admin UI over HTTPS: https://%s:%ld/admin", host ? host : "127.0.0.1", ssl_port);
                 }
             }
+            /* SSL_CTX holds its own references; safe to free originals */
+            X509_free(server_cert);
+            EVP_PKEY_free(server_key);
+            /* Keep CA cert (via g_ca_cert_pem), free key */
+            EVP_PKEY_free(ca_key);
+            if (!g_ca_cert_pem) X509_free(ca_cert);
         }
-    } else {
-        log_msg("DEBUG", "HTTPS disabled (ssl_cert_file or ssl_key_file not set)");
     }
-    free(ssl_cert);
-    free(ssl_key);
 #else
     (void)0;
 #endif

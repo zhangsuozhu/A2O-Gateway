@@ -21,12 +21,11 @@ make docker
 ### Dependencies (Debian/Ubuntu)
 ```bash
 sudo apt-get install -y build-essential cmake pkg-config \
-  libevent-dev libcurl4-openssl-dev libcjson-dev ca-certificates
-```
+  libevent-dev libcurl4-openssl-dev libcjson-dev libssl-dev ca-certificates
 
 ### Dependencies (macOS)
 ```bash
-brew install cmake pkg-config libevent curl cjson
+brew install cmake pkg-config libevent curl cjson openssl
 ```
 
 ### Run with env var (alternative to CLI arg)
@@ -135,15 +134,15 @@ All three modes record stats / history / cache tokens identically via `stats.c` 
 
 | File | Lines | Responsibility |
 |------|-------|---------------|
-| `types.h` | 533 | Shared structs (membuf_t, app_config_t, stream_state_t, gateway_job, worker_t), inline utilities, extern globals |
-| `main.c` | 343 | Entry point, libevent setup, signal handling, global var declarations |
-| `handlers.c` | 1051 | HTTP route dispatch, auth, request lifecycle, admin API |
+| `types.h` | 542 | Shared structs (membuf_t, app_config_t, stream_state_t, gateway_job, worker_t), inline utilities, extern globals |
+| `main.c` | 576 | Entry point, libevent setup, SSL cert generation (CA + server), signal handling, global var declarations |
+| `handlers.c` | 1194 | HTTP route dispatch, auth, request lifecycle, admin API, favicon/CA cert serving |
 | `stream.c` | 1151 | SSE streaming parser, chunk-by-chunk conversion, tool stream tracking |
 | `convert.c` | 833 | Bidirectional protocol conversion (Anthropic ↔ OpenAI), URL construction |
 | `worker.c` | 742 | libcurl multi worker thread pool, job queue, CURL easy handle lifecycle (forced HTTP/1.1) |
 | `db.c` | 992 | SQLite persistence: request history, hourly/daily/model aggregate stats (WAL mode) |
 | `stats.c` | 503 | Request statistics: per-model breakdown, time windows, latency tracking |
-| `config.c` | 546 | JSON config load/save, masked output, RWLock-protected hot-reload |
+| `config.c` | 558 | JSON config load/save, masked output, RWLock-protected hot-reload |
 | `log.c` | 452 | Logging: level filtering, file output, realtime terminal print |
 | `db.h` | 79 | SQLite schema constants, INSERT/query function declarations, DB path/reset helpers |
 | `src/admin_html_embedded.h` | 8 | Declares `EMBEDDED_ADMIN_HTML[]` / `EMBEDDED_ADMIN_HTML_LEN` symbols |
@@ -160,6 +159,8 @@ extern worker_t WORKERS[MAX_WORKERS]; // worker thread pool
 extern int WORKER_COUNT;              // actual worker count
 extern unsigned long RR;              // round-robin job dispatch counter
 extern volatile sig_atomic_t STOP;    // shutdown flag
+extern char *g_ca_cert_pem;           // CA certificate PEM (downloadable at /admin/ca.pem)
+extern long g_ca_cert_pem_len;        // CA certificate PEM length
 ```
 
 Config is held in `app_config_t *config_root;` (defined in `config.c`) and is RWLock-protected for concurrent reads from workers and exclusive writes from the admin Web UI hot-reload.
@@ -208,11 +209,23 @@ Config is held in `app_config_t *config_root;` (defined in `config.c`) and is RW
 - **Helper**: `xstrdup()` is a NULL-safe strdup defined in convert.c, used throughout.
 - **Error strings**: Functions like `config_replace_from_json(body, &err)` allocate error strings that the caller must `free()`.
 
-## Admin UI Embedding
+## Resource Embedding
 
-`web/admin.html` is embedded into the binary at build time. CMake runs `xxd -i` to generate `src/generated/admin_html.c`, which declares `EMBEDDED_ADMIN_HTML[]` and `EMBEDDED_ADMIN_HTML_LEN`. The gateway serves the admin UI directly from memory — no `web/` directory is needed at runtime, and `install(DIRECTORY web ...)` has been removed from CMake.
+The gateway embeds several resources into the binary at build time:
 
-If you modify `web/admin.html`, rebuild to regenerate the embedded C array. The `add_custom_command` in `CMakeLists.txt` handles this automatically when the HTML source is newer than the generated C file.
+- **Admin UI** (`web/admin.html`): CMake runs `xxd -i` to generate `src/generated/admin_html.c`, declaring `EMBEDDED_ADMIN_HTML[]` / `EMBEDDED_ADMIN_HTML_LEN`. The admin UI is served directly from memory — no `web/` directory needed at runtime, and `install(DIRECTORY web ...)` has been removed from CMake. If you modify `web/admin.html`, rebuild to regenerate the embedded C array; the `add_custom_command` in `CMakeLists.txt` handles this automatically when the HTML source is newer than the generated C file.
+- **Favicon** (`src/generated/favicon.c`): A small `favicon.png` embedded via `xxd -i`, served at `/favicon.ico`.
+- **CA certificate** (`src/generated/ca_embedded.h`): Generated once by `scripts/gen-ca.sh` on first CMake configure. This CA is used to auto-sign the server SSL certificate. The PEM text is also exposed at `/admin/ca.pem` for client download.
+
+### Embedded Files
+
+| Path | Source | Build step |
+|------|--------|------------|
+| `src/generated/admin_html.c` | `web/admin.html` | `add_custom_command` (xxd -i) |
+| `src/generated/favicon.c` | `src/favicon_embedded.h` (binary) | `add_custom_command` (xxd -i) |
+| `src/generated/ca_embedded.h` | `scripts/gen-ca.sh` | `execute_process` on first configure |
+
+If you modify any of the source files, rebuild to regenerate the embedded arrays.
 
 ## Config Hot-Reload Mechanics
 
@@ -242,18 +255,19 @@ OpenAI models like DeepSeek-R1 return `choices[0].delta.reasoning_content` in st
 ## Common Tasks
 
 - **Add a new model route**: Add entry to `config/gateway.local.json` under `models[]`. No code change needed.
-- **Add a new HTTP endpoint**: Define handler in `handlers.c`, register in `handle_root()` (~line 1017).
+- **Add a new HTTP endpoint**: Define handler in `handlers.c`, register in `handle_root()` (~line 1166).
 - **Use a model from an OpenAI client**: Point the client at `http://<gateway>/v1/chat/completions` — the route is OpenAI passthrough by design, independent of the model's `api_mode`. Any model with a valid `base_url`/`api_key` is reachable both via `/v1/messages` (with protocol conversion or Anthropic passthrough depending on `api_mode`) and via `/v1/chat/completions` (raw OpenAI passthrough).
 - **Modify protocol conversion**: Edit `convert.c` (request/build side) or `stream.c` (response/streaming side).
 - **Change config schema**: Update `config.h/c` accessors (`config_get_*` / `config_set_*`) and `web/admin.html` form fields.
 - **Add vendor-specific extra params**: Use `extra_body` in model config (e.g., `{"enable_search": true}`). No code change needed for simple key-value extras.
 - **Enable HTTP/2 multiplexing**: Not applicable — the gateway forces `CURL_HTTP_VERSION_1_1` to avoid framing errors with upstreams like DeepSeek.
-
 ### Route Registration Pattern
 
-In `handlers.c`, `handle_root()` (~line 1017) uses manual URI dispatch. New endpoints follow the pattern:
+In `handlers.c`, `handle_root()` (~line 1166) uses manual URI dispatch. New endpoints follow the pattern:
 1. Create handler function with signature `void handler(struct evhttp_request *req, void *arg)`
 2. Register in `handle_root()` with `URI_IS("/path")` matching inside the catch-all handler
+
+Recent additions: `/favicon.ico` returns an embedded PNG; `/admin/ca.pem` returns the CA certificate PEM for HTTPS client configuration.
 
 ## Key Configuration
 
@@ -316,13 +330,13 @@ The `examples/` directory contains Anthropic-format test payloads:
 - `anthropic-tool.json` — tool/function calling request
 
 ### CLI Arguments
-
 ```bash
 ./build/cc-oai-gateway [OPTIONS]
   -f, --file PATH      Config file path (default: ./config/gateway.json)
   -p, --port PORT      Listen port (default: 8081)
   -P, --password PASS  Admin web UI password (default: empty)
   -w, --workers NUM    Worker threads (default: 4, max: 8)
+  -c, --cert-ip IP     Extra SAN IP for server cert (default: 127.0.0.1)
   -d, --daemon         Run as background daemon
   -h, --help           Show help
 ```

@@ -19,6 +19,13 @@ endif()
 pkg_check_modules(LIBEVENT_SSL libevent_openssl)
 pkg_check_modules(OPENSSL openssl)
 
+
+# Generate embedded CA header if missing (same CA across all builds)
+if(NOT EXISTS ${CMAKE_SOURCE_DIR}/src/generated/ca_embedded.h)
+    execute_process(COMMAND ${CMAKE_SOURCE_DIR}/scripts/gen-ca.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating embedded CA certificate")
+endif()
 # Generate embedded admin.html C file when the source HTML changes
 add_custom_command(
     OUTPUT ${CMAKE_SOURCE_DIR}/src/generated/admin_html.c
@@ -43,6 +50,7 @@ set(GATEWAY_SOURCES
     src/db.c
     src/sqlite3/sqlite3.c
     src/generated/admin_html.c
+    src/generated/favicon.c
 )
 
 add_executable(cc-oai-gateway ${GATEWAY_SOURCES})

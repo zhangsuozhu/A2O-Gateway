@@ -4,8 +4,6 @@
 	"http_enabled":	true,
 	"https_enabled":	true,
 	"log_level":	"debug",
-	"ssl_cert_file":	"",
-	"ssl_key_file":	"",
 	"ssl_port":	8443,
 	"realtime_print":	"false",
 	"gateway_api_key":	"cc-local-token",

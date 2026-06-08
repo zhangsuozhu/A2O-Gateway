@@ -19,6 +19,7 @@
 #include "stats.h"
 #include "db.h"
 #include "admin_html_embedded.h"
+#include "favicon_embedded.h"
 #include "log.h"
 #include <event2/event.h>
 #include <event2/http.h>
@@ -1082,6 +1083,22 @@ static void handle_admin_change_password(struct evhttp_request *req) {
     }
     cJSON_Delete(j); free(body);
 }
+/**
+ * @brief 处理 /favicon.ico 请求
+ * @param req HTTP 请求对象
+ *
+ * 返回嵌入的 favicon PNG 图像。
+ */
+static void handle_favicon(struct evhttp_request *req) {
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add(out, EMBEDDED_FAVICON, EMBEDDED_FAVICON_LEN);
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "image/x-icon");
+    evhttp_add_header(h, "Cache-Control", "public, max-age=86400");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+}
+
 
 static void handle_admin_html(struct evhttp_request *req) {
     struct evbuffer *out = evbuffer_new();
@@ -1091,6 +1108,24 @@ static void handle_admin_html(struct evhttp_request *req) {
     evhttp_add_header(h, "Cache-Control", "no-cache, no-store, must-revalidate");
     evhttp_add_header(h, "Pragma", "no-cache");
     evhttp_add_header(h, "Expires", "0");
+    evhttp_send_reply(req, 200, "OK", out);
+    evbuffer_free(out);
+}
+
+/**
+ * @brief 提供 CA 证书下载（/admin/ca.pem）
+ */
+static void handle_ca_cert_download(struct evhttp_request *req) {
+    if (!g_ca_cert_pem || g_ca_cert_pem_len <= 0) {
+        send_error_json(req, 404, "not_found", "CA certificate not available");
+        return;
+    }
+    struct evbuffer *out = evbuffer_new();
+    evbuffer_add(out, g_ca_cert_pem, g_ca_cert_pem_len);
+    struct evkeyvalq *h = evhttp_request_get_output_headers(req);
+    evhttp_add_header(h, "Content-Type", "application/x-pem-file");
+    evhttp_add_header(h, "Content-Disposition", "attachment; filename=\"ca-cert.pem\"");
+    evhttp_add_header(h, "Cache-Control", "public, max-age=3600");
     evhttp_send_reply(req, 200, "OK", out);
     evbuffer_free(out);
 }
@@ -1131,7 +1166,9 @@ void handle_root(struct evhttp_request *req, void *arg) {
     if (ulen < 1) { send_error_json(req, 400, "bad_request", "empty uri"); return; }
     if (ulen == 1 && uri[0] == '/') { handle_admin_html(req); return; }
 #define URI_IS(s) (ulen == strlen(s) && memcmp(uri, s, ulen) == 0)
+    if (URI_IS("/favicon.ico")) { handle_favicon(req); return; }
     if (URI_IS("/admin") || URI_IS("/admin/")) { handle_admin_html(req); return; }
+    if (URI_IS("/admin/ca.pem") && evhttp_request_get_command(req) == EVHTTP_REQ_GET) { handle_ca_cert_download(req); return; }
     if (URI_IS("/healthz") || URI_IS("/readyz")) { handle_health(req); return; }
     if (URI_IS("/v1/messages")) { handle_messages(req); return; }
     if (URI_IS("/v1/chat/completions")) { handle_chat_completions(req); return; }

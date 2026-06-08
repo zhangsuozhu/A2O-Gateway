@@ -19,16 +19,14 @@ Claude Code (Anthropic Protocol)
 ## 快速开始
 
 ### 安装依赖
-
 ```bash
 # Debian/Ubuntu
 sudo apt-get install -y build-essential cmake pkg-config \
-  libevent-dev libcurl4-openssl-dev libcjson-dev ca-certificates
+  libevent-dev libcurl4-openssl-dev libcjson-dev libssl-dev ca-certificates
 
 # macOS
-brew install cmake pkg-config libevent curl cjson
+brew install cmake pkg-config libevent curl cjson openssl
 ```
-
 ### 构建 & 运行
 
 ```bash
@@ -98,6 +96,7 @@ claude --model qwen-coder
 | `-p, --port PORT` | 监听端口 | `8081` |
 | `-P, --password PASS` | Web 管理密码 | 空 |
 | `-w, --workers NUM` | Worker 线程数 (1-8) | `4` |
+| `-c, --cert-ip IP` | 服务端证书额外 SAN IP | `127.0.0.1` |
 | `-d, --daemon` | 后台守护进程 | 前台运行 |
 | `-h, --help` | 显示帮助 | — |
 
@@ -128,6 +127,7 @@ claude --model qwen-coder
 
 | Method | Path | 说明 |
 |--------|------|------|
+| GET | `/admin/ca.pem` | 下载网关 CA 证书（用于 HTTPS 客户端验证） |
 | GET | `/admin` | Web 管理界面 |
 | POST | `/admin/api/login` | 密码登录 |
 | POST | `/admin/api/logout` | 登出 |
@@ -148,6 +148,7 @@ claude --model qwen-coder
 
 | Method | Path | 说明 |
 |--------|------|------|
+| GET | `/favicon.ico` | 网站图标 |
 | GET | `/healthz` | 健康检查 |
 | GET | `/readyz` | 健康检查别名 |
 | GET | `/` | 跳转到 `/admin` |
@@ -164,6 +165,9 @@ claude --model qwen-coder
 | `realtime_print` | string | `false` | 实时打印：`false`/`all`（完整 JSON）/`txt`（纯文本） |
 | `gateway_api_key` | string | — | 网关访问凭据 |
 | `admin_password` | string | 空 | Web 管理界面登录密码 |
+| `http_enabled` | bool | `true` | 启用 HTTP 监听器 |
+| `https_enabled` | bool | `true` | 启用 HTTPS 监听器（自动生成 CA 签名证书） |
+| `ssl_port` | number | `8443` | HTTPS 监听端口 |
 | `db_path` | string | `/var/log/gateway.db` | SQLite 数据库路径 |
 | `log_file` | string | `/var/log/cc-oai-gateway.log` | 日志文件路径 |
 | `worker_threads` | number | `4` | Worker 线程数 (1-8) |

@@ -266,20 +266,24 @@ int config_load(const char *path, long cli_port, const char *cli_password, long 
     char *txt = read_file(G.path, &n);
     cJSON *root = NULL;
     if (txt) root = cJSON_Parse(txt);
+    if (txt && !root) {
+        /* File exists but not valid JSON — error, do NOT overwrite */
+        free(txt);
+        log_msg("ERROR", "invalid JSON in config file: %s", G.path);
+        return -1;
+    }
     free(txt);
     if (!root) {
+        /* File not found — create default config */
         root = default_config(cli_port, cli_password);
         char *p = cJSON_Print(root);
         write_file_atomic(G.path, p);
         free(p);
         log_msg("WARN", "created default config: %s", G.path);
     }
-    /* Back-compat: add admin_password if missing */
+    /* Back-compat: add admin_password if missing (in-memory only, no write-back) */
     if (!cJSON_GetObjectItemCaseSensitive(root, "admin_password")) {
         cJSON_AddStringToObject(root, "admin_password", "");
-        char *p = cJSON_Print(root);
-        write_file_atomic(G.path, p);
-        free(p);
         log_msg("INFO", "added default admin_password to config");
     }
     bool cli_overrides = false;
